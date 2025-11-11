@@ -166,3 +166,4 @@ When modifying pgxntool:
 
 - **../pgxntool-test/** - Test harness for validating pgxntool functionality
 - **../pgxntool-test-template/** - Minimal extension project used as test subject
+- Never produce any kind of metrics or estimates unless you have data to back them up. If you do have data you MUST reference it.
