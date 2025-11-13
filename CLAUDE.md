@@ -101,6 +101,33 @@ make dist              # Create PGXN .zip (auto-tags, places in ../)
 make pgxntool-sync     # Update to latest pgxntool via git subtree pull
 ```
 
+## Testing with pgxntool
+
+### Critical Testing Rules
+
+**NEVER use `make installcheck` directly**. Always use `make test` instead. The `make test` target ensures:
+- Clean builds before testing
+- Proper test isolation
+- Correct test dependency installation
+- Proper cleanup and result comparison
+
+**Database Connection Requirement**: PostgreSQL must be running before executing `make test`. If you get connection errors (e.g., "could not connect to server"), stop and ask the user to start PostgreSQL.
+
+**Claude Code MUST NEVER run `make results`**. This target updates test expected output files and requires manual human verification of test changes before execution. The workflow is:
+1. Human runs `make test` and examines diffs
+2. Human manually verifies changes are correct
+3. Human manually runs `make results` to update expected files
+
+### Test Output Mechanics
+
+pgxntool uses PostgreSQL's pg_regress test framework:
+- **Actual test output**: Written to `test/results/` directory
+- **Expected output**: Stored in `test/expected/` directory
+- **Test comparison**: `make test` compares actual vs expected and shows diffs
+- **Updating expectations**: `make results` copies `test/results/` → `test/expected/`
+
+When tests fail, examine the diff output carefully. The actual test output in `test/results/` shows what your code produced, while `test/expected/` shows what was expected.
+
 ## Development Workflow (for pgxntool Contributors)
 
 When modifying pgxntool:
