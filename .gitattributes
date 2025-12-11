@@ -1,4 +1,5 @@
 .gitattributes export-ignore
+.claude/ export-ignore
 *.asc export-ignore
 *.adoc export-ignore
 *.html export-ignore
