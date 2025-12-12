@@ -12,6 +12,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Think of it like this**: pgxntool is to PostgreSQL extensions what a Makefile template library is to C projects - it's infrastructure code that gets copied into other projects, not a project itself.
 
+## Development Workflow: Work from pgxntool-test
+
+**CRITICAL**: All development work on pgxntool should be done from the `../pgxntool-test/` repository, NOT from this repository.
+
+**Why?** Because:
+- This repository contains ONLY the framework files that get embedded into extension projects
+- All development tools, test infrastructure, and convenience scripts live in `../pgxntool-test/`
+- Adding development tools here would pollute every extension project that uses pgxntool
+
+**What this means**:
+- Clone and work from `../pgxntool-test/` when developing pgxntool
+- Edit files in `../pgxntool/` but run all commands from `../pgxntool-test/`
+- All testing, documentation of testing, and development utilities belong in pgxntool-test
+
 ## Three-Repository Development Pattern
 
 This codebase uses an unusual three-repository testing pattern:
