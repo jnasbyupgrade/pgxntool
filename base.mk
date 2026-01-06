@@ -43,6 +43,116 @@ TEST_SQL_FROM_SOURCE	 = $(patsubst $(TESTDIR)/input/%.source,$(TESTDIR)/sql/%.sq
 TEST_EXPECTED_FROM_SOURCE = $(patsubst $(TESTDIR)/output/%.source,$(TESTDIR)/expected/%.out,$(TEST_OUT_SOURCE_FILES))
 REGRESS		 = $(sort $(notdir $(subst .source,,$(TEST_FILES:.sql=)))) # Sort is to get unique list
 REGRESS_OPTS = --inputdir=$(TESTDIR) --outputdir=$(TESTOUT) # See additional setup below
+
+#
+# OPTIONAL TEST FEATURES
+#
+# These sections configure optional test features. Each feature can be enabled/disabled
+# via a makefile variable. If not explicitly set, features auto-detect based on
+# directory existence or default behavior. The actual feature implementation is
+# located later in this file (see test-build target, schedule file generation, etc.).
+#
+
+# ------------------------------------------------------------------------------
+# test-build: Sanity check extension files before running full test suite
+# ------------------------------------------------------------------------------
+# Purpose: Validates that extension SQL files are syntactically correct by running
+#          files from test/build/ through pg_regress. This provides better error
+#          messages than CREATE EXTENSION failures.
+#
+# Variable: PGXNTOOL_ENABLE_TEST_BUILD
+#   - Can be set manually in Makefile or command line
+#   - Allowed values: "yes" or "no" (case-insensitive)
+#   - If not set: Auto-detects based on existence of test/build/*.sql files
+#   - Usage: Controls whether test-build target exists and runs before make test
+#
+# Implementation: See test-build target definition (search for "test-build:" in this file)
+#
+TEST_BUILD_FILES = $(wildcard $(TESTDIR)/build/*.sql) $(wildcard $(TESTDIR)/build/sql/*.sql)
+ifdef PGXNTOOL_ENABLE_TEST_BUILD
+  # User explicitly set the variable - validate and use their value
+  PGXNTOOL_ENABLE_TEST_BUILD_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_TEST_BUILD)" | tr '[:upper:]' '[:lower:]'))
+  ifneq ($(PGXNTOOL_ENABLE_TEST_BUILD_NORM),yes)
+    ifneq ($(PGXNTOOL_ENABLE_TEST_BUILD_NORM),no)
+      $(error PGXNTOOL_ENABLE_TEST_BUILD must be "yes" or "no", got "$(PGXNTOOL_ENABLE_TEST_BUILD)")
+    endif
+  endif
+  # Use normalized value
+  PGXNTOOL_ENABLE_TEST_BUILD = $(PGXNTOOL_ENABLE_TEST_BUILD_NORM)
+else
+  # Auto-detect: enable if test/build/ directory has SQL files
+  ifneq ($(strip $(TEST_BUILD_FILES)),)
+    PGXNTOOL_ENABLE_TEST_BUILD = yes
+  else
+    PGXNTOOL_ENABLE_TEST_BUILD = no
+  endif
+endif
+
+# ------------------------------------------------------------------------------
+# test/install: Performance optimization - run setup once before all tests
+# ------------------------------------------------------------------------------
+# Purpose: Runs files from test/install/ before all test/sql/ files, allowing
+#          expensive setup (like extension installation) to happen once per test
+#          run instead of in each test file's transaction.
+#
+# Variable: PGXNTOOL_ENABLE_TEST_INSTALL
+#   - Can be set manually in Makefile or command line
+#   - Allowed values: "yes" or "no" (case-insensitive)
+#   - If not set: Auto-detects based on existence of test/install/*.sql or *.source files
+#   - Usage: Controls whether schedule file is generated to run test/install/ files first
+#
+# Implementation: See schedule file generation (search for "TEST_SCHEDULE_FILE" in this file)
+#
+TEST_INSTALL_FILES = $(wildcard $(TESTDIR)/install/*.sql) $(wildcard $(TESTDIR)/install/*.source)
+ifdef PGXNTOOL_ENABLE_TEST_INSTALL
+  # User explicitly set the variable - validate and use their value
+  PGXNTOOL_ENABLE_TEST_INSTALL_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_TEST_INSTALL)" | tr '[:upper:]' '[:lower:]'))
+  ifneq ($(PGXNTOOL_ENABLE_TEST_INSTALL_NORM),yes)
+    ifneq ($(PGXNTOOL_ENABLE_TEST_INSTALL_NORM),no)
+      $(error PGXNTOOL_ENABLE_TEST_INSTALL must be "yes" or "no", got "$(PGXNTOOL_ENABLE_TEST_INSTALL)")
+    endif
+  endif
+  # Use normalized value
+  PGXNTOOL_ENABLE_TEST_INSTALL = $(PGXNTOOL_ENABLE_TEST_INSTALL_NORM)
+else
+  # Auto-detect: enable if test/install/ directory has files
+  ifneq ($(strip $(TEST_INSTALL_FILES)),)
+    PGXNTOOL_ENABLE_TEST_INSTALL = yes
+  else
+    PGXNTOOL_ENABLE_TEST_INSTALL = no
+  endif
+endif
+
+# ------------------------------------------------------------------------------
+# verify-results: Safeguard for make results
+# ------------------------------------------------------------------------------
+# Purpose: Prevents accidentally running 'make results' when tests are failing.
+#          Checks for existence of regression.diffs file before allowing results update.
+#
+# Variable: PGXNTOOL_ENABLE_VERIFY_RESULTS
+#   - Can be set manually in Makefile or command line
+#   - Allowed values: "yes" or "no" (case-insensitive)
+#   - If not set: Defaults to "yes" (enabled by default for all pgxntool projects)
+#   - Usage: Controls whether verify-results target exists and blocks make results
+#
+# Implementation: See verify-results target definition and results target modification
+#                 (search for "verify-results" and "results:" in this file)
+#
+ifdef PGXNTOOL_ENABLE_VERIFY_RESULTS
+  # User explicitly set the variable - validate and use their value
+  PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_VERIFY_RESULTS)" | tr '[:upper:]' '[:lower:]'))
+  ifneq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM),yes)
+    ifneq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM),no)
+      $(error PGXNTOOL_ENABLE_VERIFY_RESULTS must be "yes" or "no", got "$(PGXNTOOL_ENABLE_VERIFY_RESULTS)")
+    endif
+  endif
+  # Use normalized value - use := for immediate evaluation to avoid recursion
+  override PGXNTOOL_ENABLE_VERIFY_RESULTS := $(PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM)
+else
+  # Auto-detect: default to yes (enabled by default for all pgxntool projects)
+  PGXNTOOL_ENABLE_VERIFY_RESULTS = yes
+endif
+
 MODULES      = $(patsubst %.c,%,$(wildcard src/*.c))
 ifeq ($(strip $(MODULES)),)
 MODULES =# Set to NUL so PGXS doesn't puke
@@ -69,6 +179,31 @@ ifeq ($($call test, $(MAJORVER), -lt 13), yes)
 	REGRESS_OPTS += --load-language=plpgsql
 endif
 
+#
+# Generate schedule file for test/install if enabled
+#
+# Why a schedule file is needed for test/install but not test/build:
+# The point of test/install is to run setup (like extension installation) once,
+# before all other tests, in the same database environment that the tests will use.
+# The only way to run SQL in the same environment as pg_regress tests is through
+# pg_regress itself. And the only way to control pg_regress execution order is
+# via a schedule file. test/build doesn't need this because it runs independently
+# through its own pg_regress invocation, not as part of the main test suite.
+#
+TEST_SCHEDULE_FILE = $(TESTDIR)/.schedule
+ifeq ($(PGXNTOOL_ENABLE_TEST_INSTALL),yes)
+PGXNTOOL_distclean += $(TEST_SCHEDULE_FILE)
+TEST_INSTALL_REGRESS = $(sort $(notdir $(subst .source,,$(TEST_INSTALL_FILES:.sql=))))
+# Schedule file lists test/install files first, then regular test files (but not test/build files)
+# REGRESS already excludes test/build files since TEST_FILES doesn't include them
+$(TEST_SCHEDULE_FILE): $(TEST_INSTALL_FILES) $(TEST_FILES) Makefile
+	@echo "# Auto-generated schedule file - test/install runs before test/sql" > $@
+	@for test in $(TEST_INSTALL_REGRESS); do echo "$$test" >> $@; done
+	@for test in $(REGRESS); do echo "$$test" >> $@; done
+REGRESS_OPTS += --schedule=$(TEST_SCHEDULE_FILE)
+installcheck: $(TEST_SCHEDULE_FILE)
+endif
+
 PGXS := $(shell $(PG_CONFIG) --pgxs)
 # Need to do this because we're not setting EXTENSION
 MODULEDIR = extension
@@ -90,8 +225,29 @@ installcheck: $(TEST_RESULT_FILES) $(TEST_SQL_FILES) $(TEST_SOURCE_FILES) | $(TE
 # watch-make if you're generating intermediate files. If tests end up needing
 # clean it's an indication of a missing dependency anyway.
 .PHONY: test
+ifeq ($(PGXNTOOL_ENABLE_TEST_BUILD),yes)
+test: testdeps test-build install installcheck
+else
 test: testdeps install installcheck
+endif
 	@if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; fi
+
+#
+# verify-results: Safeguard for make results
+#
+# Checks if tests are passing before allowing make results to proceed
+ifeq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS),yes)
+.PHONY: verify-results
+verify-results:
+	@if [ -r $(TESTOUT)/regression.diffs ]; then \
+		echo "ERROR: Tests are failing. Cannot run 'make results'."; \
+		echo "Fix test failures first, then run 'make results'."; \
+		echo ""; \
+		echo "See $(TESTOUT)/regression.diffs for details:"; \
+		cat $(TESTOUT)/regression.diffs; \
+		exit 1; \
+	fi
+endif
 
 # make results: runs `make test` and copy all result files to expected
 # DO NOT RUN THIS UNLESS YOU'RE CERTAIN ALL YOUR TESTS ARE PASSING!
@@ -111,7 +267,11 @@ test: testdeps install installcheck
 # those are the source of truth and will be regenerated by pg_regress from the .source files.
 # Only copy files from results/ that don't have output/*.source counterparts.
 .PHONY: results
+ifeq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS),yes)
+results: verify-results test
+else
 results: test
+endif
 	@# Copy .out files from results/ to expected/, excluding those with output/*.source counterparts
 	@# .out files with output/*.source counterparts are generated from .source files and should NOT be overwritten
 	@$(PGXNTOOL_DIR)/make_results.sh $(TESTDIR) $(TESTOUT)
@@ -125,6 +285,37 @@ $(TESTDIR)/sql $(TESTDIR)/expected/ $(TESTOUT)/results/:
 	@mkdir -p $@
 $(TEST_RESULT_FILES): | $(TESTDIR)/expected/
 	@touch $@
+
+#
+# test-build: Sanity check extension files in test/build/
+#
+ifeq ($(PGXNTOOL_ENABLE_TEST_BUILD),yes)
+TEST_BUILD_REGRESS = $(sort $(notdir $(subst .sql,,$(TEST_BUILD_FILES))))
+TEST_BUILD_RESULT_FILES = $(patsubst $(TESTDIR)/build/%.sql,$(TESTDIR)/expected/%.out,$(TEST_BUILD_FILES))
+.PHONY: test-build
+test-build: install
+	@if [ -z "$(strip $(TEST_BUILD_FILES))" ]; then \
+		echo "No files found in $(TESTDIR)/build/"; \
+		exit 1; \
+	fi
+	@mkdir -p $(TESTDIR)/expected
+	@mkdir -p $(TESTDIR)/build/sql
+	@for file in $(TEST_BUILD_FILES); do \
+		basename_file=$$(basename $$file); \
+		if [ ! -f "$(TESTDIR)/build/sql/$$basename_file" ]; then \
+			cp "$$file" "$(TESTDIR)/build/sql/$$basename_file"; \
+		fi; \
+		if [ ! -f "$(TESTDIR)/expected/$$(basename $$file .sql).out" ]; then \
+			touch "$(TESTDIR)/expected/$$(basename $$file .sql).out"; \
+		fi; \
+	done
+	$(MAKE) -C . REGRESS="$(TEST_BUILD_REGRESS)" REGRESS_OPTS="--inputdir=$(TESTDIR)/build --outputdir=$(TESTOUT)" installcheck
+	@if [ -r $(TESTOUT)/regression.diffs ]; then \
+		echo "test-build failed - see $(TESTOUT)/regression.diffs"; \
+		cat $(TESTOUT)/regression.diffs; \
+		exit 1; \
+	fi
+endif
 
 
 #
@@ -230,6 +421,7 @@ pgxntool-sync-local-stable	:= ../pgxntool stable # Not the same as PGXNTOOL_DIR!
 
 distclean:
 	rm -f $(PGXNTOOL_distclean)
+	rm -f $(TESTDIR)/.schedule
 
 ifndef PGXNTOOL_NO_PGXS_INCLUDE
 
@@ -238,6 +430,11 @@ DOCS =# Set to NUL so PGXS doesn't puke
 endif
 
 include $(PGXS)
+#
+# Make clean also run distclean to remove PGXNTOOL_distclean files
+# This must be after PGXS is included so we can add distclean as a prerequisite
+clean: distclean
+
 #
 # pgtap
 #
