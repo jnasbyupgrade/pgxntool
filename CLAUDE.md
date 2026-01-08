@@ -12,6 +12,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Think of it like this**: pgxntool is to PostgreSQL extensions what a Makefile template library is to C projects - it's infrastructure code that gets copied into other projects, not a project itself.
 
+## Critical: Directory Purity - NO Temporary Files
+
+**This directory contains ONLY files that get embedded into extension projects.** When extension developers run `git subtree add`, they pull the entire pgxntool directory into their project.
+
+**ABSOLUTE RULE**: NO temporary files, scratch work, or development tools may be added to this directory.
+
+**Examples of what NEVER belongs here:**
+- Temporary files (scratch notes, test output, debugging artifacts)
+- Development scripts or tools (these go in pgxntool-test/)
+- Planning documents (PLAN-*.md files go in pgxntool-test/)
+- Any file you wouldn't want in every extension project that uses pgxntool
+
+**CLAUDE.md exception**: CLAUDE.md exists here for AI assistant guidance, but is excluded from distributions via `.gitattributes export-ignore`. Same with `.claude/` directory.
+
+**Why this matters**: Any file you add here will be pulled into hundreds of extension projects via git subtree. Keep this directory lean and clean.
+
 ## Development Workflow: Work from pgxntool-test
 
 **CRITICAL**: All development work on pgxntool should be done from the `../pgxntool-test/` repository, NOT from this repository.

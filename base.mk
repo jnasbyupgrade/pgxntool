@@ -131,10 +131,11 @@ PGTLE_VERSION ?=
 
 # pg_tle version ranges we support
 # These correspond to different capability levels
-PGTLE_VERSION_RANGES = 1.0.0-1.5.0 1.5.0+
+PGTLE_VERSION_RANGES = 1.0.0-1.4.0 1.4.0-1.5.0 1.5.0+
 
 # pg_tle version subdirectories
-PGTLE_1_0_TO_1_5_DIR = pg_tle/1.0.0-1.5.0
+PGTLE_1_0_TO_1_4_DIR = pg_tle/1.0.0-1.4.0
+PGTLE_1_4_TO_1_5_DIR = pg_tle/1.4.0-1.5.0
 PGTLE_1_5_PLUS_DIR = pg_tle/1.5.0+
 
 # Discover all extensions from control files in current directory
@@ -147,18 +148,22 @@ PGXNTOOL_EXTENSIONS = $(basename $(PGXNTOOL_CONTROL_FILES))
 ifeq ($(PGTLE_VERSION),)
     # Generate all versions (default)
     PGTLE_FILES = $(foreach ext,$(PGXNTOOL_EXTENSIONS),\
-                    $(PGTLE_1_0_TO_1_5_DIR)/$(ext).sql \
+                    $(PGTLE_1_0_TO_1_4_DIR)/$(ext).sql \
+                    $(PGTLE_1_4_TO_1_5_DIR)/$(ext).sql \
                     $(PGTLE_1_5_PLUS_DIR)/$(ext).sql)
 else
     # Generate only specified version
-    ifeq ($(PGTLE_VERSION),1.0.0-1.5.0)
+    ifeq ($(PGTLE_VERSION),1.0.0-1.4.0)
         PGTLE_FILES = $(foreach ext,$(PGXNTOOL_EXTENSIONS),\
-                        $(PGTLE_1_0_TO_1_5_DIR)/$(ext).sql)
+                        $(PGTLE_1_0_TO_1_4_DIR)/$(ext).sql)
+    else ifeq ($(PGTLE_VERSION),1.4.0-1.5.0)
+        PGTLE_FILES = $(foreach ext,$(PGXNTOOL_EXTENSIONS),\
+                        $(PGTLE_1_4_TO_1_5_DIR)/$(ext).sql)
     else ifeq ($(PGTLE_VERSION),1.5.0+)
         PGTLE_FILES = $(foreach ext,$(PGXNTOOL_EXTENSIONS),\
                         $(PGTLE_1_5_PLUS_DIR)/$(ext).sql)
     else
-        $(error Invalid PGTLE_VERSION: $(PGTLE_VERSION). Use 1.0.0-1.5.0 or 1.5.0+)
+        $(error Invalid PGTLE_VERSION: $(PGTLE_VERSION). Use 1.0.0-1.4.0, 1.4.0-1.5.0, or 1.5.0+)
     endif
 endif
 
@@ -173,18 +178,25 @@ pgtle: all meta.mk $(PGXNTOOL_CONTROL_FILES) $(PGTLE_FILES)
 # Enable secondary expansion for dynamic dependencies
 .SECONDEXPANSION:
 
-# Pattern rule for generating pg_tle 1.0.0-1.5.0 files
+# Pattern rule for generating pg_tle 1.0.0-1.4.0 files
 # Dependencies:
 #   - Control file (metadata source)
 #   - Generator script (tool itself)
 #   - All SQL files for this extension (using secondary expansion)
 # Note: We depend on $(EXTENSION_VERSION_FILES) at the pgtle target level
 # to ensure all versioned files exist before pattern rules run
-$(PGTLE_1_0_TO_1_5_DIR)/%.sql: %.control $(PGXNTOOL_DIR)/pgtle.sh $$(wildcard sql/$$*--*.sql) $$(wildcard sql/$$*.sql)
-	@mkdir -p $(PGTLE_1_0_TO_1_5_DIR)
+$(PGTLE_1_0_TO_1_4_DIR)/%.sql: %.control $(PGXNTOOL_DIR)/pgtle.sh $$(wildcard sql/$$*--*.sql) $$(wildcard sql/$$*.sql)
+	@mkdir -p $(PGTLE_1_0_TO_1_4_DIR)
 	@$(PGXNTOOL_DIR)/pgtle.sh \
 		--extension $(basename $<) \
-		--pgtle-version 1.0.0-1.5.0
+		--pgtle-version 1.0.0-1.4.0
+
+# Pattern rule for generating pg_tle 1.4.0-1.5.0 files
+$(PGTLE_1_4_TO_1_5_DIR)/%.sql: %.control $(PGXNTOOL_DIR)/pgtle.sh $$(wildcard sql/$$*--*.sql) $$(wildcard sql/$$*.sql)
+	@mkdir -p $(PGTLE_1_4_TO_1_5_DIR)
+	@$(PGXNTOOL_DIR)/pgtle.sh \
+		--extension $(basename $<) \
+		--pgtle-version 1.4.0-1.5.0
 
 # Pattern rule for generating pg_tle 1.5.0+ files
 $(PGTLE_1_5_PLUS_DIR)/%.sql: %.control $(PGXNTOOL_DIR)/pgtle.sh $$(wildcard sql/$$*--*.sql) $$(wildcard sql/$$*.sql)

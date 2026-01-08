@@ -27,13 +27,13 @@
 #
 #   --pgtle-version VERSION
 #       Generate for specific pg_tle version only (optional).
-#       Format: 1.0.0-1.5.0 or 1.5.0+
+#       Format: 1.0.0-1.4.0, 1.4.0-1.5.0, or 1.5.0+
 #       Default: Generate all supported versions
 #
 #   --get-dir VERSION
 #       Returns the directory path for the given pg_tle version.
 #       Format: VERSION is a version string like "1.5.2"
-#       Output: Directory path like "pg_tle/1.5.0+" or "pg_tle/1.0.0-1.5.0"
+#       Output: Directory path like "pg_tle/1.5.0+", "pg_tle/1.4.0-1.5.0", or "pg_tle/1.0.0-1.4.0"
 #       This option is used by make to determine which directory to use
 #
 #   --get-version
@@ -54,11 +54,13 @@
 #
 #   Note the boundary conditions:
 #     1.5.0+       means >= 1.5.0 (includes 1.5.0)
-#     1.0.0-1.5.0  means >= 1.0.0 and < 1.5.0 (excludes 1.5.0)
+#     1.4.0-1.5.0  means >= 1.4.0 and < 1.5.0 (excludes 1.5.0)
+#     1.0.0-1.4.0  means >= 1.0.0 and < 1.4.0 (excludes 1.4.0)
 #
 # SUPPORTED VERSIONS
-#   1.0.0-1.5.0  pg_tle 1.0.0 through 1.4.x (no schema parameter)
-#   1.5.0+       pg_tle 1.5.0 and later (schema parameter support)
+#   1.0.0-1.4.0  pg_tle 1.0.0 through 1.3.x (no uninstall function, no schema parameter)
+#   1.4.0-1.5.0  pg_tle 1.4.0 through 1.4.x (has uninstall function, no schema parameter)
+#   1.5.0+       pg_tle 1.5.0 and later (has uninstall function, schema parameter support)
 #
 # EXAMPLES
 #   # Generate all versions (default)
@@ -71,6 +73,9 @@
 #   pgtle.sh --get-dir 1.5.2
 #   # Output: pg_tle/1.5.0+
 #
+#   pgtle.sh --get-dir 1.4.2
+#   # Output: pg_tle/1.4.0-1.5.0
+#
 #   # Get installed pg_tle version from database
 #   pgtle.sh --get-version
 #   # Output: 1.5.2 (or empty if not installed)
@@ -80,7 +85,8 @@
 #
 # OUTPUT
 #   Creates files in version-specific subdirectories:
-#     pg_tle/1.0.0-1.5.0/{extension}.sql
+#     pg_tle/1.0.0-1.4.0/{extension}.sql
+#     pg_tle/1.4.0-1.5.0/{extension}.sql
 #     pg_tle/1.5.0+/{extension}.sql
 #
 #   Each file contains:
@@ -112,55 +118,27 @@
 
 set -eo pipefail
 
-# Error function - outputs to stderr but doesn't exit
-# Usage: error "message"
-error() {
-    echo "ERROR: $*" >&2
-}
-
-# Die function - outputs error message and exits with specified code
-# Usage: die EXIT_CODE "message"
-die() {
-    local exit_code=$1
-    shift
-    error "$@"
-    exit "$exit_code"
-}
-
-# Debug function
-# Usage: debug LEVEL "message"
-# Outputs message to stderr if DEBUG >= LEVEL
-# Debug levels use multiples of 10 (10, 20, 30, 40, etc.) to allow for easy expansion
-#   - 10: Critical errors, important warnings
-#   - 20: Warnings, significant state changes
-#   - 30: General debugging, function entry/exit, array operations
-#   - 40: Verbose details, loop iterations
-#   - 50+: Maximum verbosity
-# Enable with: DEBUG=30 pgtle.sh --extension myext
-debug() {
-    local level=$1
-    shift
-    local message="$*"
-    
-    if [ "${DEBUG:-0}" -ge "$level" ]; then
-        echo "DEBUG[$level]: $message" >&2
-    fi
-}
+# Source common library functions (error, die, debug)
+PGXNTOOL_DIR="$(dirname "${BASH_SOURCE[0]}")"
+source "$PGXNTOOL_DIR/lib.sh"
 
 # Constants
 PGTLE_DELIMITER='$_pgtle_wrap_delimiter_$'
-PGTLE_VERSIONS=("1.0.0-1.5.0" "1.5.0+")
+PGTLE_VERSIONS=("1.0.0-1.4.0" "1.4.0-1.5.0" "1.5.0+")
 
 # Supported pg_tle version ranges and their capabilities
 # Use a function instead of associative array for compatibility with bash < 4.0
 get_pgtle_capability() {
     local version="$1"
     case "$version" in
-        "1.0.0-1.5.0")
-            echo "no_schema_param"
+        "1.0.0-1.4.0")
+            echo "no_uninstall_no_schema"
+            ;;
+        "1.4.0-1.5.0")
+            echo "has_uninstall_no_schema"
             ;;
         "1.5.0+")
-            echo "schema_param"
+            echo "has_uninstall_has_schema"
             ;;
         *)
             echo "unknown"
@@ -262,7 +240,7 @@ version_to_number() {
 # Get directory for a given pg_tle version
 # Takes a version string like "1.5.2" and returns the directory path
 # Handles versions with suffixes (e.g., "1.5.0alpha1")
-# Returns: "pg_tle/1.0.0-1.5.0" or "pg_tle/1.5.0+"
+# Returns: "pg_tle/1.0.0-1.4.0", "pg_tle/1.4.0-1.5.0", or "pg_tle/1.5.0+"
 get_version_dir() {
     local version="$1"
 
@@ -274,15 +252,40 @@ get_version_dir() {
     local numeric_version
     numeric_version=$(parse_version "$version")
 
+    # Check if the original version has a pre-release suffix
+    # Pre-release versions (alpha, beta, rc, dev) are considered BEFORE the release
+    # Example: 1.4.0alpha1 comes BEFORE 1.4.0, so it should use the 1.0.0-1.4.0 range
+    local has_prerelease=0
+    if [[ "$version" =~ (alpha|beta|rc|dev) ]]; then
+        has_prerelease=1
+    fi
+
     # Convert versions to comparable numbers
     local version_num
-    local threshold_num
+    local threshold_1_4_num
+    local threshold_1_5_num
     version_num=$(version_to_number "$numeric_version")
-    threshold_num=$(version_to_number "1.5.0")
+    threshold_1_4_num=$(version_to_number "1.4.0")
+    threshold_1_5_num=$(version_to_number "1.5.0")
 
-    # Compare: if version < 1.5.0, use 1.0.0-1.5.0 directory; otherwise use 1.5.0+ directory
-    if [ "$version_num" -lt "$threshold_num" ]; then
-        echo "pg_tle/1.0.0-1.5.0"
+    # Compare and return appropriate directory:
+    # < 1.4.0 -> 1.0.0-1.4.0
+    # >= 1.4.0 and < 1.5.0 -> 1.4.0-1.5.0
+    # >= 1.5.0 -> 1.5.0+
+    #
+    # Special handling for pre-release versions:
+    # If version equals a threshold but has a pre-release suffix, treat it as less than that threshold
+    # Example: 1.4.0alpha1 is treated as < 1.4.0, so it uses 1.0.0-1.4.0
+    if [ "$version_num" -lt "$threshold_1_4_num" ]; then
+        echo "pg_tle/1.0.0-1.4.0"
+    elif [ "$version_num" -eq "$threshold_1_4_num" ] && [ "$has_prerelease" -eq 1 ]; then
+        # Pre-release of 1.4.0 is considered < 1.4.0
+        echo "pg_tle/1.0.0-1.4.0"
+    elif [ "$version_num" -lt "$threshold_1_5_num" ]; then
+        echo "pg_tle/1.4.0-1.5.0"
+    elif [ "$version_num" -eq "$threshold_1_5_num" ] && [ "$has_prerelease" -eq 1 ]; then
+        # Pre-release of 1.5.0 is considered < 1.5.0
+        echo "pg_tle/1.4.0-1.5.0"
     else
         echo "pg_tle/1.5.0+"
     fi
@@ -703,7 +706,7 @@ generate_install_extension() {
     fi
 
     # Add schema parameter only for capability version 1.5.0+
-    if [ "$capability" = "schema_param" ]; then
+    if [ "$capability" = "has_uninstall_has_schema" ]; then
         if [ -n "$SCHEMA" ]; then
             echo "  , '${SCHEMA}'  -- schema parameter (pg_tle 1.5.0+)"
         else
@@ -783,17 +786,19 @@ generate_pgtle_sql() {
         cat <<EOF
 BEGIN;
 
+EOF
+
+        # Only include uninstall block for pg_tle 1.4.0+ (versions with uninstall support)
+        if [ "$capability" != "no_uninstall_no_schema" ]; then
+            cat <<EOF
 /*
  * Uninstall extension if it exists (idempotent registration)
- * Silently ignore if uninstall_extension doesn't exist or extension not found
+ * Silently ignore if extension not found
  */
 DO \$\$
 BEGIN
     PERFORM pgtle.uninstall_extension('${EXTENSION}');
 EXCEPTION
-    WHEN undefined_function THEN
-        -- pgtle.uninstall_extension might not exist in older versions
-        NULL;
     WHEN undefined_object THEN
         -- Extension might not exist yet
         NULL;
@@ -801,6 +806,7 @@ END
 \$\$;
 
 EOF
+        fi
 
         # Install base version (first version file)
         if [ ${#VERSION_FILES[@]} -gt 0 ]; then
