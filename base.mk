@@ -64,6 +64,13 @@ TEST__SOURCE__SQL_FILES	 = $(patsubst $(TESTDIR)/input/%.source,$(TESTDIR)/sql/%
 TEST__SOURCE__EXPECTED_FILES = $(patsubst $(TESTDIR)/output/%.source,$(TESTDIR)/expected/%.out,$(TEST__SOURCE__OUTPUT_FILES))
 REGRESS		 = $(sort $(notdir $(subst .source,,$(TEST_FILES:.sql=)))) # Sort is to get unique list
 REGRESS_OPTS = --inputdir=$(TESTDIR) --outputdir=$(TESTOUT) # See additional setup below
+
+# Generate unique database name for tests to prevent conflicts across projects
+# Uses project name + first 5 chars of md5 hash of current directory
+# This prevents multiple test runs in different directories from clobbering each other
+REGRESS_DBHASH := $(shell echo $(CURDIR) | (md5 2>/dev/null || md5sum) | cut -c1-5)
+REGRESS_DBNAME := $(or $(PGXN),regression)_$(REGRESS_DBHASH)
+REGRESS_OPTS += --dbname=$(REGRESS_DBNAME)
 MODULES      = $(patsubst %.c,%,$(wildcard src/*.c))
 ifeq ($(strip $(MODULES)),)
 MODULES =# Set to NUL so PGXS doesn't puke
@@ -306,8 +313,10 @@ pgxntool-sync: pgxntool-sync-release
 # could make resolving merges difficult!
 pgxntool-sync-release	:= git@github.com:decibel/pgxntool.git release
 pgxntool-sync-stable	:= git@github.com:decibel/pgxntool.git stable
+pgxntool-sync-master	:= git@github.com:decibel/pgxntool.git master
 pgxntool-sync-local		:= ../pgxntool release # Not the same as PGXNTOOL_DIR!
 pgxntool-sync-local-stable	:= ../pgxntool stable # Not the same as PGXNTOOL_DIR!
+pgxntool-sync-local-master	:= ../pgxntool master # Not the same as PGXNTOOL_DIR!
 
 distclean:
 	rm -f $(PGXNTOOL_distclean)
