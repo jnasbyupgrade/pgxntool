@@ -70,7 +70,6 @@ REGRESS_OPTS = --inputdir=$(TESTDIR) --outputdir=$(TESTOUT) # See additional set
 # This prevents multiple test runs in different directories from clobbering each other
 REGRESS_DBHASH := $(shell echo $(CURDIR) | (md5 2>/dev/null || md5sum) | cut -c1-5)
 REGRESS_DBNAME := $(or $(PGXN),regression)_$(REGRESS_DBHASH)
-REGRESS_OPTS += --dbname=$(REGRESS_DBNAME)
 MODULES      = $(patsubst %.c,%,$(wildcard src/*.c))
 ifeq ($(strip $(MODULES)),)
 MODULES =# Set to NUL so PGXS doesn't puke
@@ -328,6 +327,14 @@ DOCS =# Set to NUL so PGXS doesn't puke
 endif
 
 include $(PGXS)
+
+# Override CONTRIB_TESTDB (set unconditionally by PGXS) with our unique database
+# name. This must be after include $(PGXS) because PGXS uses = (not ?=).
+# PGXS appends --dbname=$(CONTRIB_TESTDB) to REGRESS_OPTS, so overriding
+# CONTRIB_TESTDB is the correct way to control the database name — adding our
+# own --dbname would result in two --dbname flags passed to pg_regress.
+CONTRIB_TESTDB = $(REGRESS_DBNAME)
+
 #
 # pgtap
 #
