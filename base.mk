@@ -44,7 +44,7 @@ DOCS		+= $(foreach dir,$(DOC_DIRS),$(wildcard $(dir)/*))
 
 # Find all asciidoc targets
 ASCIIDOC ?= $(shell which asciidoctor 2>/dev/null || which asciidoc 2>/dev/null)
-ASCIIDOC_EXTS	+= adoc asciidoc
+ASCIIDOC_EXTS	+= adoc asciidoc asc
 ASCIIDOC_FILES	+= $(foreach dir,$(DOC_DIRS),$(foreach ext,$(ASCIIDOC_EXTS),$(wildcard $(dir)/*.$(ext))))
 
 PG_CONFIG   ?= pg_config
@@ -89,7 +89,12 @@ REGRESS_OPTS = --inputdir=$(TESTDIR) --outputdir=$(TESTOUT) # See additional set
 #
 # Implementation: See test-build target definition (search for "test-build:" in this file)
 #
-TEST_BUILD_FILES = $(wildcard $(TESTDIR)/build/*.sql) $(wildcard $(TESTDIR)/build/sql/*.sql)
+# Files can be *.sql in test/build/ or *.source in test/build/input/
+# The sql/ subdirectory is generated (cleaned, gitignored)
+#
+TEST_BUILD_SQL_FILES = $(wildcard $(TESTDIR)/build/*.sql)
+TEST_BUILD_SOURCE_FILES = $(wildcard $(TESTDIR)/build/input/*.source)
+TEST_BUILD_FILES = $(TEST_BUILD_SQL_FILES) $(TEST_BUILD_SOURCE_FILES)
 ifdef PGXNTOOL_ENABLE_TEST_BUILD
   # User explicitly set the variable - validate and use their value
   PGXNTOOL_ENABLE_TEST_BUILD_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_TEST_BUILD)" | tr '[:upper:]' '[:lower:]'))
@@ -110,21 +115,29 @@ else
 endif
 
 # ------------------------------------------------------------------------------
-# test/install: Performance optimization - run setup once before all tests
+# test/install: Run setup files before all tests in the same pg_regress session
 # ------------------------------------------------------------------------------
-# Purpose: Runs files from test/install/ before all test/sql/ files, allowing
-#          expensive setup (like extension installation) to happen once per test
-#          run instead of in each test file's transaction.
+# Purpose: Runs files from test/install/ before all test/sql/ files within a
+#          SINGLE pg_regress invocation via schedule files. This ensures that
+#          state created by install files (tables, extensions, etc.) persists
+#          into the main test suite.
 #
 # Variable: PGXNTOOL_ENABLE_TEST_INSTALL
 #   - Can be set manually in Makefile or command line
 #   - Allowed values: "yes" or "no" (case-insensitive)
-#   - If not set: Auto-detects based on existence of test/install/*.sql or *.source files
-#   - Usage: Controls whether schedule file is generated to run test/install/ files first
+#   - If not set: Auto-detects based on existence of test/install/*.sql files
+#   - Usage: Controls whether schedule files are generated for test/install
 #
-# Implementation: See schedule file generation (search for "TEST_SCHEDULE_FILE" in this file)
+# Directory layout (follows ~/code/extensions/archive/ pattern):
+#   test/install/*.sql      - Install SQL files
+#   test/install/*.out      - Expected output (lives alongside .sql files)
+#   test/install/schedule   - Auto-generated schedule file
+#   test/sql/schedule       - Auto-generated schedule file for regular tests
 #
-TEST_INSTALL_FILES = $(wildcard $(TESTDIR)/install/*.sql) $(wildcard $(TESTDIR)/install/*.source)
+# The schedule files use relative paths (../install/testname) so pg_regress
+# resolves install files from their original location without copying.
+#
+TEST_INSTALL_SQL_FILES = $(wildcard $(TESTDIR)/install/*.sql)
 ifdef PGXNTOOL_ENABLE_TEST_INSTALL
   # User explicitly set the variable - validate and use their value
   PGXNTOOL_ENABLE_TEST_INSTALL_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_TEST_INSTALL)" | tr '[:upper:]' '[:lower:]'))
@@ -136,8 +149,8 @@ ifdef PGXNTOOL_ENABLE_TEST_INSTALL
   # Use normalized value
   PGXNTOOL_ENABLE_TEST_INSTALL = $(PGXNTOOL_ENABLE_TEST_INSTALL_NORM)
 else
-  # Auto-detect: enable if test/install/ directory has files
-  ifneq ($(strip $(TEST_INSTALL_FILES)),)
+  # Auto-detect: enable if test/install/ directory has SQL files
+  ifneq ($(strip $(TEST_INSTALL_SQL_FILES)),)
     PGXNTOOL_ENABLE_TEST_INSTALL = yes
   else
     PGXNTOOL_ENABLE_TEST_INSTALL = no
@@ -201,28 +214,32 @@ ifeq ($($call test, $(MAJORVER), -lt 13), yes)
 endif
 
 #
-# Generate schedule file for test/install if enabled
+# test/install: Schedule-based approach
 #
-# Why a schedule file is needed for test/install but not test/build:
-# The point of test/install is to run setup (like extension installation) once,
-# before all other tests, in the same database environment that the tests will use.
-# The only way to run SQL in the same environment as pg_regress tests is through
-# pg_regress itself. And the only way to control pg_regress execution order is
-# via a schedule file. test/build doesn't need this because it runs independently
-# through its own pg_regress invocation, not as part of the main test suite.
+# When enabled, generates a schedule file listing install files, and adds it
+# to REGRESS_OPTS. pg_regress processes --schedule tests before command-line
+# test names, so install files run first in the SAME pg_regress invocation.
+# This ensures state created by install files persists into the main test suite.
 #
-TEST_SCHEDULE_FILE = $(TESTDIR)/.schedule
+# The schedule uses relative paths (../install/testname) so pg_regress finds
+# install files in their original location without copying.
+#
 ifeq ($(PGXNTOOL_ENABLE_TEST_INSTALL),yes)
-PGXNTOOL_distclean += $(TEST_SCHEDULE_FILE)
-TEST_INSTALL_REGRESS = $(sort $(notdir $(subst .source,,$(TEST_INSTALL_FILES:.sql=))))
-# Schedule file lists test/install files first, then regular test files (but not test/build files)
-# REGRESS already excludes test/build files since TEST_FILES doesn't include them
-$(TEST_SCHEDULE_FILE): $(TEST_INSTALL_FILES) $(TEST_FILES) Makefile
-	@echo "# Auto-generated schedule file - test/install runs before test/sql" > $@
-	@for test in $(TEST_INSTALL_REGRESS); do echo "$$test" >> $@; done
-	@for test in $(REGRESS); do echo "$$test" >> $@; done
-REGRESS_OPTS += --schedule=$(TEST_SCHEDULE_FILE)
-installcheck: $(TEST_SCHEDULE_FILE)
+PGXNTOOL_INSTALL_SCHEDULE = $(TESTDIR)/install/schedule
+EXTRA_CLEAN += $(PGXNTOOL_INSTALL_SCHEDULE)
+
+# Add install schedule; REGRESS stays as-is (regular tests run after schedule)
+REGRESS_OPTS += --schedule=$(PGXNTOOL_INSTALL_SCHEDULE)
+
+# Always regenerate schedule file to catch added/removed files
+.PHONY: $(PGXNTOOL_INSTALL_SCHEDULE)
+$(PGXNTOOL_INSTALL_SCHEDULE):
+	@echo "# Auto-generated - DO NOT EDIT" > $@
+	@for f in $(notdir $(basename $(TEST_INSTALL_SQL_FILES))); do \
+		echo "test: ../install/$$f" >> $@; \
+	done
+
+installcheck: $(PGXNTOOL_INSTALL_SCHEDULE)
 endif
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
@@ -246,11 +263,14 @@ installcheck: $(TEST_RESULT_FILES) $(TEST_SQL_FILES) $(TEST__SOURCE__INPUT_FILES
 # watch-make if you're generating intermediate files. If tests end up needing
 # clean it's an indication of a missing dependency anyway.
 .PHONY: test
+# Build test dependencies list based on enabled features
+TEST_DEPS = testdeps
 ifeq ($(PGXNTOOL_ENABLE_TEST_BUILD),yes)
-test: testdeps test-build install installcheck
-else
-test: testdeps install installcheck
+TEST_DEPS += test-build
 endif
+TEST_DEPS += install
+TEST_DEPS += installcheck
+test: $(TEST_DEPS)
 	@if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; fi
 
 #
@@ -355,30 +375,41 @@ $(TEST_RESULT_FILES): | $(TESTDIR)/expected/
 #
 # test-build: Sanity check extension files in test/build/
 #
+# The sql/ subdirectory is generated - files are copied from test/build/*.sql
+# and pg_regress generates sql/ from input/*.source files.
+# This directory should be in .gitignore and is cleaned by make clean.
+#
 ifeq ($(PGXNTOOL_ENABLE_TEST_BUILD),yes)
-TEST_BUILD_REGRESS = $(sort $(notdir $(subst .sql,,$(TEST_BUILD_FILES))))
-TEST_BUILD_RESULT_FILES = $(patsubst $(TESTDIR)/build/%.sql,$(TESTDIR)/expected/%.out,$(TEST_BUILD_FILES))
+TEST_BUILD_SQL_DIR = $(TESTDIR)/build/sql
+TEST_BUILD_REGRESS = $(sort $(notdir $(basename $(TEST_BUILD_SQL_FILES))) $(notdir $(basename $(TEST_BUILD_SOURCE_FILES:.source=))))
 .PHONY: test-build
 test-build: install
 	@if [ -z "$(strip $(TEST_BUILD_FILES))" ]; then \
 		echo "No files found in $(TESTDIR)/build/"; \
 		exit 1; \
 	fi
-	@mkdir -p $(TESTDIR)/expected
-	@mkdir -p $(TESTDIR)/build/sql
-	@for file in $(TEST_BUILD_FILES); do \
-		basename_file=$$(basename $$file); \
-		if [ ! -f "$(TESTDIR)/build/sql/$$basename_file" ]; then \
-			cp "$$file" "$(TESTDIR)/build/sql/$$basename_file"; \
-		fi; \
-		if [ ! -f "$(TESTDIR)/expected/$$(basename $$file .sql).out" ]; then \
-			touch "$(TESTDIR)/expected/$$(basename $$file .sql).out"; \
+	@mkdir -p $(TEST_BUILD_SQL_DIR)
+	@mkdir -p $(TESTDIR)/build/expected
+	@# Copy .sql files to sql/ directory
+	@for file in $(TEST_BUILD_SQL_FILES); do \
+		cp "$$file" "$(TEST_BUILD_SQL_DIR)/$$(basename $$file)"; \
+	done
+	@# Create empty expected files if needed
+	@for file in $(TEST_BUILD_SQL_FILES); do \
+		if [ ! -f "$(TESTDIR)/build/expected/$$(basename $$file .sql).out" ]; then \
+			touch "$(TESTDIR)/build/expected/$$(basename $$file .sql).out"; \
 		fi; \
 	done
-	$(MAKE) -C . REGRESS="$(TEST_BUILD_REGRESS)" REGRESS_OPTS="--inputdir=$(TESTDIR)/build --outputdir=$(TESTOUT)" installcheck
-	@if [ -r $(TESTOUT)/regression.diffs ]; then \
-		echo "test-build failed - see $(TESTOUT)/regression.diffs"; \
-		cat $(TESTOUT)/regression.diffs; \
+	@for file in $(TEST_BUILD_SOURCE_FILES); do \
+		base=$$(basename $$file .source); \
+		if [ ! -f "$(TESTDIR)/build/expected/$$base.out" ]; then \
+			touch "$(TESTDIR)/build/expected/$$base.out"; \
+		fi; \
+	done
+	$(MAKE) -C . REGRESS="$(TEST_BUILD_REGRESS)" REGRESS_OPTS="--inputdir=$(TESTDIR)/build --outputdir=$(TESTDIR)/build" installcheck
+	@if [ -r $(TESTDIR)/build/regression.diffs ]; then \
+		echo "test-build failed - see $(TESTDIR)/build/regression.diffs"; \
+		cat $(TESTDIR)/build/regression.diffs; \
 		exit 1; \
 	fi
 endif
@@ -502,7 +533,6 @@ pgxntool-sync-local-stable	:= ../pgxntool stable # Not the same as PGXNTOOL_DIR!
 
 distclean:
 	rm -f $(PGXNTOOL_distclean)
-	rm -f $(TESTDIR)/.schedule
 
 ifndef PGXNTOOL_NO_PGXS_INCLUDE
 
@@ -515,6 +545,14 @@ include $(PGXS)
 # Make clean also run distclean to remove PGXNTOOL_distclean files
 # This must be after PGXS is included so we can add distclean as a prerequisite
 clean: distclean
+
+# Clean generated sql/ directory for test-build
+ifeq ($(PGXNTOOL_ENABLE_TEST_BUILD),yes)
+.PHONY: clean-test-build
+clean-test-build:
+	rm -rf $(TEST_BUILD_SQL_DIR)
+clean: clean-test-build
+endif
 
 #
 # pgtap
