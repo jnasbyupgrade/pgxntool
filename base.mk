@@ -6,7 +6,6 @@ PGXNTOOL_DIR := pgxntool
 #
 # META.json
 #
-PGXNTOOL_distclean += META.json
 META.json: META.in.json $(PGXNTOOL_DIR)/build_meta.sh
 	@$(PGXNTOOL_DIR)/build_meta.sh $< $@
 
@@ -14,7 +13,6 @@ META.json: META.in.json $(PGXNTOOL_DIR)/build_meta.sh
 # meta.mk
 #
 # Build meta.mk, which contains PGXN distribution info from META.json
-PGXNTOOL_distclean += meta.mk
 meta.mk: META.json Makefile $(PGXNTOOL_DIR)/base.mk $(PGXNTOOL_DIR)/meta.mk.sh
 	@$(PGXNTOOL_DIR)/meta.mk.sh $< >$@
 
@@ -31,7 +29,6 @@ meta.mk: META.json Makefile $(PGXNTOOL_DIR)/base.mk $(PGXNTOOL_DIR)/meta.mk.sh
 #
 # Find all control files first (needed for dependencies)
 PGXNTOOL_CONTROL_FILES := $(wildcard *.control)
-PGXNTOOL_distclean += control.mk
 control.mk: $(PGXNTOOL_CONTROL_FILES) Makefile $(PGXNTOOL_DIR)/base.mk $(PGXNTOOL_DIR)/control.mk.sh
 	@$(PGXNTOOL_DIR)/control.mk.sh $(PGXNTOOL_CONTROL_FILES) >$@
 
@@ -137,6 +134,11 @@ endif
 # The schedule files use relative paths (../install/testname) so pg_regress
 # resolves install files from their original location without copying.
 #
+# NOTE: The variable normalization pattern below (ifdef/NORM/error/override) is
+# identical to test-build and verify-results. Refactoring options:
+#   1. A $(call normalize_bool_var,VAR,DEFAULT) Make function
+#   2. A small include fragment (e.g. pgxntool/mk/bool-var.mk)
+# Either approach would eliminate the ~10-line block repeated for each feature.
 TEST_INSTALL_SQL_FILES = $(wildcard $(TESTDIR)/install/*.sql)
 ifdef PGXNTOOL_ENABLE_TEST_INSTALL
   # User explicitly set the variable - validate and use their value
@@ -161,13 +163,20 @@ endif
 # verify-results: Safeguard for make results
 # ------------------------------------------------------------------------------
 # Purpose: Prevents accidentally running 'make results' when tests are failing.
-#          Checks for existence of regression.diffs file before allowing results update.
 #
 # Variable: PGXNTOOL_ENABLE_VERIFY_RESULTS
 #   - Can be set manually in Makefile or command line
 #   - Allowed values: "yes" or "no" (case-insensitive)
 #   - If not set: Defaults to "yes" (enabled by default for all pgxntool projects)
 #   - Usage: Controls whether verify-results target exists and blocks make results
+#
+# Variable: PGXNTOOL_VERIFY_RESULTS_MODE
+#   - Controls how verify-results detects test failures
+#   - "pgtap" (default): scans test/results/*.out for "not ok" lines and plan
+#     mismatches (TAP failures). Also checks regression.diffs as a fallback.
+#     Use this mode when your test suite uses pgTap.
+#   - "diffs": checks only for regression.diffs existence (classic pg_regress behavior)
+#     Use this mode when your tests use plain SQL expected-output comparison only.
 #
 # Implementation: See verify-results target definition and results target modification
 #                 (search for "verify-results" and "results:" in this file)
@@ -187,12 +196,15 @@ else
   PGXNTOOL_ENABLE_VERIFY_RESULTS = yes
 endif
 
+# Default mode: pgtap (scans results/*.out for TAP failures)
+PGXNTOOL_VERIFY_RESULTS_MODE ?= pgtap
+
 MODULES      = $(patsubst %.c,%,$(wildcard src/*.c))
 ifeq ($(strip $(MODULES)),)
 MODULES =# Set to NUL so PGXS doesn't puke
 endif
 
-EXTRA_CLEAN  = $(wildcard ../$(PGXN)-*.zip) $(TEST__SOURCE__SQL_FILES) $(TEST__SOURCE__EXPECTED_FILES) pg_tle/
+EXTRA_CLEAN  = META.json meta.mk control.mk $(wildcard ../$(PGXN)-*.zip) $(TEST__SOURCE__SQL_FILES) $(TEST__SOURCE__EXPECTED_FILES) pg_tle/
 
 # Get Postgres version, as well as major (9.4, etc) version.
 # NOTE! In at least some versions, PGXS defines VERSION, so we intentionally don't use that variable
@@ -268,8 +280,7 @@ TEST_DEPS = testdeps
 ifeq ($(PGXNTOOL_ENABLE_TEST_BUILD),yes)
 TEST_DEPS += test-build
 endif
-TEST_DEPS += install
-TEST_DEPS += installcheck
+TEST_DEPS += install installcheck
 test: $(TEST_DEPS)
 	@if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; fi
 
@@ -279,6 +290,28 @@ test: $(TEST_DEPS)
 # Checks if tests are passing before allowing make results to proceed
 ifeq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS),yes)
 .PHONY: verify-results
+ifeq ($(PGXNTOOL_VERIFY_RESULTS_MODE),pgtap)
+verify-results:
+	@# Check for pgtap failures: "not ok" lines or plan mismatches in results/*.out
+	@failing=$$(grep -rl '^not ok\|^# Looks like you planned' $(TESTOUT)/results/ 2>/dev/null); \
+	if [ -n "$$failing" ]; then \
+		echo "ERROR: Tests are failing. Cannot run 'make results'."; \
+		echo "Fix test failures first, then run 'make results'."; \
+		echo ""; \
+		echo "Failing pgtap results:"; \
+		echo "$$failing" | xargs grep -h '^not ok\|^# Looks like you planned'; \
+		exit 1; \
+	fi
+	@# Also check regression.diffs (output mismatch even if pgtap all passed)
+	@if [ -r $(TESTOUT)/regression.diffs ]; then \
+		echo "ERROR: Tests are failing. Cannot run 'make results'."; \
+		echo "Fix test failures first, then run 'make results'."; \
+		echo ""; \
+		echo "See $(TESTOUT)/regression.diffs for details:"; \
+		cat $(TESTOUT)/regression.diffs; \
+		exit 1; \
+	fi
+else
 verify-results:
 	@if [ -r $(TESTOUT)/regression.diffs ]; then \
 		echo "ERROR: Tests are failing. Cannot run 'make results'."; \
@@ -288,6 +321,7 @@ verify-results:
 		cat $(TESTOUT)/regression.diffs; \
 		exit 1; \
 	fi
+endif
 endif
 
 # make results: runs `make test` and copy all result files to expected
@@ -370,6 +404,9 @@ run-pgtle: pgtle
 $(TESTDIR)/sql $(TESTDIR)/expected/ $(TESTOUT)/results/:
 	@mkdir -p $@
 $(TEST_RESULT_FILES): | $(TESTDIR)/expected/
+	@# Create empty expected file so pg_regress doesn't abort with "file not found".
+	@# pg_regress requires an expected/*.out file to exist for each test; without it
+	@# it stops immediately rather than running the test and showing the diff.
 	@touch $@
 
 #
@@ -388,24 +425,7 @@ test-build: install
 		echo "No files found in $(TESTDIR)/build/"; \
 		exit 1; \
 	fi
-	@mkdir -p $(TEST_BUILD_SQL_DIR)
-	@mkdir -p $(TESTDIR)/build/expected
-	@# Copy .sql files to sql/ directory
-	@for file in $(TEST_BUILD_SQL_FILES); do \
-		cp "$$file" "$(TEST_BUILD_SQL_DIR)/$$(basename $$file)"; \
-	done
-	@# Create empty expected files if needed
-	@for file in $(TEST_BUILD_SQL_FILES); do \
-		if [ ! -f "$(TESTDIR)/build/expected/$$(basename $$file .sql).out" ]; then \
-			touch "$(TESTDIR)/build/expected/$$(basename $$file .sql).out"; \
-		fi; \
-	done
-	@for file in $(TEST_BUILD_SOURCE_FILES); do \
-		base=$$(basename $$file .source); \
-		if [ ! -f "$(TESTDIR)/build/expected/$$base.out" ]; then \
-			touch "$(TESTDIR)/build/expected/$$base.out"; \
-		fi; \
-	done
+	@$(PGXNTOOL_DIR)/run-test-build.sh $(TESTDIR)
 	$(MAKE) -C . REGRESS="$(TEST_BUILD_REGRESS)" REGRESS_OPTS="--inputdir=$(TESTDIR)/build --outputdir=$(TESTDIR)/build" installcheck
 	@if [ -r $(TESTDIR)/build/regression.diffs ]; then \
 		echo "test-build failed - see $(TESTDIR)/build/regression.diffs"; \
@@ -531,9 +551,6 @@ pgxntool-sync-stable	:= git@github.com:decibel/pgxntool.git stable
 pgxntool-sync-local		:= ../pgxntool release # Not the same as PGXNTOOL_DIR!
 pgxntool-sync-local-stable	:= ../pgxntool stable # Not the same as PGXNTOOL_DIR!
 
-distclean:
-	rm -f $(PGXNTOOL_distclean)
-
 ifndef PGXNTOOL_NO_PGXS_INCLUDE
 
 ifeq (,$(strip $(DOCS)))
@@ -541,10 +558,6 @@ DOCS =# Set to NUL so PGXS doesn't puke
 endif
 
 include $(PGXS)
-#
-# Make clean also run distclean to remove PGXNTOOL_distclean files
-# This must be after PGXS is included so we can add distclean as a prerequisite
-clean: distclean
 
 # Clean generated sql/ directory for test-build
 ifeq ($(PGXNTOOL_ENABLE_TEST_BUILD),yes)
