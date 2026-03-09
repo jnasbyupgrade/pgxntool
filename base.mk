@@ -81,6 +81,7 @@ REGRESS_OPTS = --inputdir=$(TESTDIR) --outputdir=$(TESTOUT) # See additional set
 # Variable: PGXNTOOL_ENABLE_TEST_BUILD
 #   - Can be set manually in Makefile or command line
 #   - Allowed values: "yes" or "no" (case-insensitive)
+#   - Setting to empty on the command line (e.g. PGXNTOOL_ENABLE_TEST_BUILD=) also disables the feature
 #   - If not set: Auto-detects based on existence of test/build/*.sql files
 #   - Usage: Controls whether test-build target exists and runs before make test
 #
@@ -122,6 +123,7 @@ endif
 # Variable: PGXNTOOL_ENABLE_TEST_INSTALL
 #   - Can be set manually in Makefile or command line
 #   - Allowed values: "yes" or "no" (case-insensitive)
+#   - Setting to empty on the command line (e.g. PGXNTOOL_ENABLE_TEST_INSTALL=) also disables the feature
 #   - If not set: Auto-detects based on existence of test/install/*.sql files
 #   - Usage: Controls whether schedule files are generated for test/install
 #
@@ -167,6 +169,7 @@ endif
 # Variable: PGXNTOOL_ENABLE_VERIFY_RESULTS
 #   - Can be set manually in Makefile or command line
 #   - Allowed values: "yes" or "no" (case-insensitive)
+#   - Setting to empty on the command line (e.g. PGXNTOOL_ENABLE_VERIFY_RESULTS=) also disables the feature
 #   - If not set: Defaults to "yes" (enabled by default for all pgxntool projects)
 #   - Usage: Controls whether verify-results target exists and blocks make results
 #
