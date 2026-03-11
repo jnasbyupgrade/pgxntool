@@ -71,6 +71,14 @@ REGRESS_OPTS = --inputdir=$(TESTDIR) --outputdir=$(TESTOUT) # See additional set
 # located later in this file (see test-build target, schedule file generation, etc.).
 #
 
+# Helper function: normalize a yes/no variable to lowercase and validate.
+# Usage: $(call pgxntool_validate_yesno,VALUE,VARIABLE_NAME)
+# Returns the lowercase value ("yes" or "no"), or errors if invalid.
+pgxntool_validate_yesno = $(strip \
+  $(if $(filter yes no,$(shell echo "$(1)" | tr '[:upper:]' '[:lower:]')),\
+    $(shell echo "$(1)" | tr '[:upper:]' '[:lower:]'),\
+    $(error $(2) must be "yes" or "no", got "$(1)")))
+
 # ------------------------------------------------------------------------------
 # test-build: Sanity check extension files before running full test suite
 # ------------------------------------------------------------------------------
@@ -94,15 +102,7 @@ TEST_BUILD_SQL_FILES = $(wildcard $(TESTDIR)/build/*.sql)
 TEST_BUILD_SOURCE_FILES = $(wildcard $(TESTDIR)/build/input/*.source)
 TEST_BUILD_FILES = $(TEST_BUILD_SQL_FILES) $(TEST_BUILD_SOURCE_FILES)
 ifdef PGXNTOOL_ENABLE_TEST_BUILD
-  # User explicitly set the variable - validate and use their value
-  PGXNTOOL_ENABLE_TEST_BUILD_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_TEST_BUILD)" | tr '[:upper:]' '[:lower:]'))
-  ifneq ($(PGXNTOOL_ENABLE_TEST_BUILD_NORM),yes)
-    ifneq ($(PGXNTOOL_ENABLE_TEST_BUILD_NORM),no)
-      $(error PGXNTOOL_ENABLE_TEST_BUILD must be "yes" or "no", got "$(PGXNTOOL_ENABLE_TEST_BUILD)")
-    endif
-  endif
-  # Use normalized value
-  PGXNTOOL_ENABLE_TEST_BUILD = $(PGXNTOOL_ENABLE_TEST_BUILD_NORM)
+  PGXNTOOL_ENABLE_TEST_BUILD := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_TEST_BUILD),PGXNTOOL_ENABLE_TEST_BUILD)
 else
   # Auto-detect: enable if test/build/ directory has SQL files
   ifneq ($(strip $(TEST_BUILD_FILES)),)
@@ -143,15 +143,7 @@ endif
 # Either approach would eliminate the ~10-line block repeated for each feature.
 TEST_INSTALL_SQL_FILES = $(wildcard $(TESTDIR)/install/*.sql)
 ifdef PGXNTOOL_ENABLE_TEST_INSTALL
-  # User explicitly set the variable - validate and use their value
-  PGXNTOOL_ENABLE_TEST_INSTALL_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_TEST_INSTALL)" | tr '[:upper:]' '[:lower:]'))
-  ifneq ($(PGXNTOOL_ENABLE_TEST_INSTALL_NORM),yes)
-    ifneq ($(PGXNTOOL_ENABLE_TEST_INSTALL_NORM),no)
-      $(error PGXNTOOL_ENABLE_TEST_INSTALL must be "yes" or "no", got "$(PGXNTOOL_ENABLE_TEST_INSTALL)")
-    endif
-  endif
-  # Use normalized value
-  PGXNTOOL_ENABLE_TEST_INSTALL = $(PGXNTOOL_ENABLE_TEST_INSTALL_NORM)
+  PGXNTOOL_ENABLE_TEST_INSTALL := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_TEST_INSTALL),PGXNTOOL_ENABLE_TEST_INSTALL)
 else
   # Auto-detect: enable if test/install/ directory has SQL files
   ifneq ($(strip $(TEST_INSTALL_SQL_FILES)),)
@@ -185,17 +177,9 @@ endif
 #                 (search for "verify-results" and "results:" in this file)
 #
 ifdef PGXNTOOL_ENABLE_VERIFY_RESULTS
-  # User explicitly set the variable - validate and use their value
-  PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM = $(strip $(shell echo "$(PGXNTOOL_ENABLE_VERIFY_RESULTS)" | tr '[:upper:]' '[:lower:]'))
-  ifneq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM),yes)
-    ifneq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM),no)
-      $(error PGXNTOOL_ENABLE_VERIFY_RESULTS must be "yes" or "no", got "$(PGXNTOOL_ENABLE_VERIFY_RESULTS)")
-    endif
-  endif
-  # Use normalized value - use := for immediate evaluation to avoid recursion
-  override PGXNTOOL_ENABLE_VERIFY_RESULTS := $(PGXNTOOL_ENABLE_VERIFY_RESULTS_NORM)
+  override PGXNTOOL_ENABLE_VERIFY_RESULTS := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_VERIFY_RESULTS),PGXNTOOL_ENABLE_VERIFY_RESULTS)
 else
-  # Auto-detect: default to yes (enabled by default for all pgxntool projects)
+  # Default to yes (enabled by default for all pgxntool projects)
   PGXNTOOL_ENABLE_VERIFY_RESULTS = yes
 endif
 
@@ -324,6 +308,29 @@ verify-results:
 		cat $(TESTOUT)/regression.diffs; \
 		exit 1; \
 	fi
+	@# Check for pgtap failures in result files
+	@failed=0; \
+	for f in $(TESTOUT)/results/*.out; do \
+		[ -f "$$f" ] || continue; \
+		if grep -q '^not ok' "$$f"; then \
+			notok=$$(grep '^not ok' "$$f" | grep -v '# TODO' || true); \
+			if [ -n "$$notok" ]; then \
+				echo "ERROR: pgtap failure detected in $$f"; \
+				echo "$$notok"; \
+				failed=1; \
+			fi; \
+		fi; \
+		if grep -q 'Looks like you planned' "$$f"; then \
+			echo "ERROR: pgtap plan mismatch in $$f"; \
+			grep 'Looks like you planned' "$$f"; \
+			failed=1; \
+		fi; \
+	done; \
+	if [ $$failed -ne 0 ]; then \
+		echo ""; \
+		echo "pgtap failures detected. Cannot run 'make results'."; \
+		exit 1; \
+	fi
 endif
 endif
 
@@ -406,6 +413,8 @@ run-pgtle: pgtle
 # These targets ensure all the relevant directories exist
 $(TESTDIR)/sql $(TESTDIR)/expected/ $(TESTOUT)/results/:
 	@mkdir -p $@
+# pg_regress aborts with "could not open file" if an expected output file is
+# missing, so create empty placeholders for any test that lacks one.
 $(TEST_RESULT_FILES): | $(TESTDIR)/expected/
 	@# Create empty expected file so pg_regress doesn't abort with "file not found".
 	@# pg_regress requires an expected/*.out file to exist for each test; without it
@@ -553,6 +562,12 @@ pgxntool-sync-release	:= git@github.com:decibel/pgxntool.git release
 pgxntool-sync-stable	:= git@github.com:decibel/pgxntool.git stable
 pgxntool-sync-local		:= ../pgxntool release # Not the same as PGXNTOOL_DIR!
 pgxntool-sync-local-stable	:= ../pgxntool stable # Not the same as PGXNTOOL_DIR!
+
+# PGXS doesn't provide any special support for distclean (it just depends on
+# clean), so we roll our own. Files that should only be removed by distclean
+# (not clean) are added to PGXNTOOL_distclean near their build rules above.
+distclean:
+	rm -f $(PGXNTOOL_distclean)
 
 ifndef PGXNTOOL_NO_PGXS_INCLUDE
 

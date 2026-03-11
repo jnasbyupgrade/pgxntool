@@ -33,7 +33,7 @@ die() {
     local exit_code=$1
     shift
     error "$@"
-    exit "$exit_code"
+    exit $exit_code
 }
 
 # Debug function
