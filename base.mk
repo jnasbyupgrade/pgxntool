@@ -205,7 +205,7 @@ ifeq ($(GE91),yes)
 all: $(EXTENSION_VERSION_FILES)
 endif
 
-ifeq ($($call test, $(MAJORVER), -lt 13), yes)
+ifeq ($(call test, $(MAJORVER), -lt, 130), yes)
 	REGRESS_OPTS += --load-language=plpgsql
 endif
 
