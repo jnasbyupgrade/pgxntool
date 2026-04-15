@@ -188,7 +188,7 @@ ifeq ($(strip $(MODULES)),)
 MODULES =# Set to NUL so PGXS doesn't puke
 endif
 
-EXTRA_CLEAN  = META.json meta.mk control.mk $(wildcard ../$(PGXN)-*.zip) pg_tle/
+EXTRA_CLEAN  = $(wildcard ../$(PGXN)-*.zip) pg_tle/
 
 # Get Postgres version, as well as major (9.4, etc) version.
 # NOTE! In at least some versions, PGXS defines VERSION, so we intentionally don't use that variable
@@ -206,7 +206,7 @@ all: $(EXTENSION_VERSION_FILES)
 endif
 
 ifeq ($(call test, $(MAJORVER), -lt, 130), yes)
-	REGRESS_OPTS += --load-language=plpgsql
+REGRESS_OPTS += --load-language=plpgsql
 endif
 
 #
