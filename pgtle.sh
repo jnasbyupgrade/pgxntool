@@ -565,7 +565,7 @@ discover_sql_files() {
     done
 
     debug 30 "discover_sql_files: Checking UPGRADE_FILES array, count=${#UPGRADE_FILES[@]}"
-    if [ ${#UPGRADE_FILES[@]} -gt 0 ]; then
+    if array_not_empty "${#UPGRADE_FILES[@]}"; then
         echo "  Found ${#UPGRADE_FILES[@]} upgrade script(s):" >&2
         debug 30 "discover_sql_files: Iterating over ${#UPGRADE_FILES[@]} upgrade files"
         for f in "${UPGRADE_FILES[@]}"; do
@@ -807,7 +807,7 @@ EOF
         fi
 
         # Install base version (first version file)
-        if [ ${#VERSION_FILES[@]} -gt 0 ]; then
+        if array_not_empty "${#VERSION_FILES[@]}"; then
             generate_install_extension "${VERSION_FILES[0]}" "$capability"
         fi
 
