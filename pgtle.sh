@@ -823,10 +823,11 @@ EOF
         debug 30 "generate_pgtle_sql: upgrade_count=$upgrade_count"
         if [ "$upgrade_count" -gt 0 ]; then
             debug 30 "generate_pgtle_sql: Processing $upgrade_count upgrade path(s)"
-            local i
-            for ((i=0; i<upgrade_count; i++)); do
+            local i=0
+            while [ "$i" -lt "$upgrade_count" ]; do
                 debug 40 "generate_pgtle_sql: Processing upgrade file $i: ${UPGRADE_FILES[$i]}"
                 generate_install_update_path "${UPGRADE_FILES[$i]}"
+                i=$((i + 1))
             done
         else
             debug 30 "generate_pgtle_sql: No upgrade paths to process"
