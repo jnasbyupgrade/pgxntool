@@ -46,10 +46,9 @@ die() {
 # "simplifying" the call site. Without it, the natural next step is to
 # inline the expression — and the natural inline form breaks bash 3.2.
 #
-# On bash 3.2 + set -u, expanding "${arr[@]}" on an empty array triggers
-# "unbound variable" even when the array was explicitly initialized with
-# arr=(). bash 3.2 is the macOS default, so this affects every developer's
-# laptop.
+# On bash 3.2 (Mac OS default), when using `set -u`, expanding "${arr[@]}"
+# on an empty array triggers "unbound variable" even when the array was
+# explicitly initialized with arr=().
 #
 # The comment inside the function body exists to catch any agent or human who
 # navigates to the function without reading this comment first.

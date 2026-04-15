@@ -156,7 +156,7 @@ MODULE_PATHNAME=""
 VERSION_FILES=()
 UPGRADE_FILES=()
 
-debug 30 "Global arrays initialized: VERSION_FILES=${#VERSION_FILES[@]}, UPGRADE_FILES=${#UPGRADE_FILES[@]}"
+debug 20 "Global arrays initialized: VERSION_FILES=${#VERSION_FILES[@]}, UPGRADE_FILES=${#UPGRADE_FILES[@]}"
 PGTLE_VERSION=""  # Empty = generate all
 GET_DIR_VERSION=""  # For --get-dir option
 
@@ -518,14 +518,14 @@ discover_sql_files() {
     local default_version_file="sql/${EXTENSION}--${DEFAULT_VERSION}.sql"
     local base_file="sql/${EXTENSION}.sql"
     if [ -f "$base_file" ] && ([ ! -f "$default_version_file" ] || [ ! -s "$default_version_file" ]); then
-        debug 30 "discover_sql_files: Creating default_version file from base file"
+        debug 40 "discover_sql_files: Creating default_version file from base file"
         cp "$base_file" "$default_version_file"
     fi
 
     # Find versioned files: sql/{ext}--{version}.sql
     # Use find to get proper null-delimited output, then filter out upgrade scripts
     VERSION_FILES=()  # Reset array
-    debug 30 "discover_sql_files: Reset VERSION_FILES array"
+    debug 40 "discover_sql_files: Reset VERSION_FILES array"
     while IFS= read -r -d '' file; do
         local basename=$(basename "$file" .sql)
         local dash_count=$(echo "$basename" | grep -o -- "--" | wc -l | tr -d '[:space:]')
@@ -543,7 +543,7 @@ discover_sql_files() {
     # Find upgrade scripts: sql/{ext}--{ver1}--{ver2}.sql
     # These have TWO occurrences of "--" in the filename
     UPGRADE_FILES=()  # Reset array
-    debug 30 "discover_sql_files: Reset UPGRADE_FILES array"
+    debug 40 "discover_sql_files: Reset UPGRADE_FILES array"
     while IFS= read -r -d '' file; do
         # Empty upgrade files are allowed (no-op upgrades)
         local basename=$(basename "$file" .sql)
@@ -564,7 +564,7 @@ discover_sql_files() {
         echo "    - $f" >&2
     done
 
-    debug 30 "discover_sql_files: Checking UPGRADE_FILES array, count=${#UPGRADE_FILES[@]}"
+    debug 40 "discover_sql_files: Checking UPGRADE_FILES array, count=${#UPGRADE_FILES[@]}"
     if array_not_empty "${#UPGRADE_FILES[@]}"; then
         echo "  Found ${#UPGRADE_FILES[@]} upgrade script(s):" >&2
         debug 30 "discover_sql_files: Iterating over ${#UPGRADE_FILES[@]} upgrade files"
@@ -759,7 +759,7 @@ generate_pgtle_sql() {
     
     # Ensure arrays are initialized (defensive programming)
     # Arrays should already be initialized at top level, but ensure they exist
-    debug 30 "generate_pgtle_sql: Checking array initialization"
+    debug 40 "generate_pgtle_sql: Checking array initialization"
     debug 30 "generate_pgtle_sql: VERSION_FILES is ${VERSION_FILES+set}, count=${#VERSION_FILES[@]}"
     debug 30 "generate_pgtle_sql: UPGRADE_FILES is ${UPGRADE_FILES+set}, count=${#UPGRADE_FILES[@]}"
     
@@ -820,12 +820,12 @@ EOF
 
         # Install all upgrade paths
         local upgrade_count=${#UPGRADE_FILES[@]}
-        debug 30 "generate_pgtle_sql: upgrade_count=$upgrade_count"
+        debug 40 "generate_pgtle_sql: upgrade_count=$upgrade_count"
         if [ "$upgrade_count" -gt 0 ]; then
             debug 30 "generate_pgtle_sql: Processing $upgrade_count upgrade path(s)"
             local i=0
             while [ "$i" -lt "$upgrade_count" ]; do
-                debug 40 "generate_pgtle_sql: Processing upgrade file $i: ${UPGRADE_FILES[$i]}"
+                debug 50 "generate_pgtle_sql: Processing upgrade file $i: ${UPGRADE_FILES[$i]}"
                 generate_install_update_path "${UPGRADE_FILES[$i]}"
                 i=$((i + 1))
             done
