@@ -254,6 +254,30 @@ Generated files depend on:
 - No C code support (pg_tle requires trusted languages only)
 - PostgreSQL 14.5+ required (pg_tle not available on earlier versions)
 
+## Makefile Variable Assignment Rules
+
+**RULE: Do not use `:=` (simply expanded) unless you have a specific need for immediate evaluation.**
+
+Use `=` (recursively expanded) for standard variable assignments. Reserve `:=` for cases where the right-hand side must be evaluated exactly once at assignment time — for example, when assigning the result of a `$(call ...)` function that references the variable being set (which would cause infinite recursion with `=`).
+
+When a variable must also override command-line values, combine `override` with `:=` — but only where `override` is genuinely needed.
+
+## Debug Level Rules (lib.sh `debug` function)
+
+The `debug` function in `lib.sh` uses a numeric level scale. All debug calls in pgxntool scripts must use levels from one of these two groups:
+
+- **Single-digit (1–9)**: Reserved for the rarest, highest-value messages. Use sparingly.
+- **Multiples of 10 (10, 20, 30, 40, 50, ...)**: The standard scale:
+  - **10**: Critical errors, important warnings
+  - **20**: Significant state changes, warnings
+  - **30**: General debugging — function entry/exit, key state summaries
+  - **40**: Verbose details — array resets, internal state checks
+  - **50+**: Maximum verbosity — loop iterations (per-item in a loop)
+
+**Forbidden**: Multi-digit levels that are not multiples of 10 (e.g., 11, 22, 25). These break the fine-tuning purpose of the scale. The commit skill sanity-checks for this.
+
+Note: The BATS test helper `debug` function (in `test/lib/helpers.bash`) uses a separate 1–5 scale. The two systems are independent.
+
 ## Critical Gotchas
 
 1. **Empty Variables**: If `DOCS` or `MODULES` is empty, base.mk sets to empty to prevent PGXS errors

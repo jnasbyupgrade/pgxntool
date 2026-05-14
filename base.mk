@@ -93,7 +93,9 @@ pgxntool_validate_yesno = $(strip \
 TEST_BUILD_SQL_FILES = $(wildcard $(TESTDIR)/build/*.sql)
 TEST_BUILD_FILES = $(TEST_BUILD_SQL_FILES)
 ifdef PGXNTOOL_ENABLE_TEST_BUILD
-  PGXNTOOL_ENABLE_TEST_BUILD := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_TEST_BUILD),PGXNTOOL_ENABLE_TEST_BUILD)
+  # override needed so command-line values (make VAR=YES) are normalized, not silently ignored.
+  # := needed for immediate evaluation of the function call (avoids infinite recursion with =).
+  override PGXNTOOL_ENABLE_TEST_BUILD := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_TEST_BUILD),PGXNTOOL_ENABLE_TEST_BUILD)
 else
   # Auto-detect: enable if test/build/ directory has SQL files
   ifneq ($(strip $(TEST_BUILD_FILES)),)
@@ -135,7 +137,9 @@ endif
 # Either approach would eliminate the ~10-line block repeated for each feature.
 TEST_INSTALL_SQL_FILES = $(wildcard $(TESTDIR)/install/*.sql)
 ifdef PGXNTOOL_ENABLE_TEST_INSTALL
-  PGXNTOOL_ENABLE_TEST_INSTALL := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_TEST_INSTALL),PGXNTOOL_ENABLE_TEST_INSTALL)
+  # override needed so command-line values (make VAR=YES) are normalized, not silently ignored.
+  # := needed for immediate evaluation of the function call (avoids infinite recursion with =).
+  override PGXNTOOL_ENABLE_TEST_INSTALL := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_TEST_INSTALL),PGXNTOOL_ENABLE_TEST_INSTALL)
 else
   # Auto-detect: enable if test/install/ directory has SQL files
   ifneq ($(strip $(TEST_INSTALL_SQL_FILES)),)
@@ -292,9 +296,12 @@ endif
 
 # make results: runs `make test` and copies all result files to expected.
 # DO NOT RUN THIS UNLESS YOU'RE CERTAIN ALL YOUR TESTS ARE PASSING!
+# verify-results runs AFTER test (not before) so it checks the fresh regression.diffs
+# from this run, not stale results from a prior run. The old order (verify-results test)
+# checked pre-run state, which would miss failures introduced by the re-run itself.
 .PHONY: results
 ifeq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS),yes)
-results: verify-results test
+results: test verify-results
 else
 results: test
 endif
