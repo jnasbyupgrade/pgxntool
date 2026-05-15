@@ -4,10 +4,17 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Scope of This File
 
-The guidance in this CLAUDE.md applies to pgxntool's own source files and provides
-recommended best practices for projects using pgxntool. However, any agent working in
-an extension project should always defer to that project's own CLAUDE.md and
-instructions over anything stated here.
+**CLAUDE.md is for people USING pgxntool** — extension developers who have embedded
+pgxntool into their project via `git subtree`. It documents the build system, available
+commands, and how pgxntool works.
+
+**If you are making changes to pgxntool itself**, stop — you are in the wrong place.
+See `.claude/` in this directory for developer guidelines. More importantly, pgxntool
+development must be done from the **pgxntool-test** repository, not from here. See the
+`Development Workflow` section below.
+
+Any agent working in an extension project should always defer to that project's own
+CLAUDE.md and instructions over anything stated here.
 
 ## Git Commit Guidelines
 

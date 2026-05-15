@@ -1,7 +1,28 @@
 # pgxntool Development Guidelines
 
-Guidelines for contributors working on pgxntool itself. This file is loaded by
-Claude Code when working in the pgxntool repository.
+**THIS FILE IS FOR PGXNTOOL DEVELOPERS ONLY.**
+
+If you are an extension developer using pgxntool in your project, this file does not
+apply to you. See the top-level `CLAUDE.md` instead.
+
+## Critical: Work from pgxntool-test, Not Here
+
+**NEVER make changes to pgxntool directly from this repository.**
+
+pgxntool development must be done from a checkout of **pgxntool-test**, which contains
+the full test infrastructure. Working here directly means you cannot run tests, and
+any changes you commit cannot be validated before merging.
+
+**Correct workflow:**
+1. Clone or use an existing checkout of `pgxntool-test`
+2. Work in a worktree: both `pgxntool/` and `pgxntool-test/` will be siblings
+3. Make changes to `pgxntool/` from within that pgxntool-test context
+4. Run the test suite via `make test` in pgxntool-test before committing
+
+**See:** https://github.com/Postgres-Extensions/pgxntool-test for the full development
+workflow.
+
+---
 
 ## Makefile Variable Assignment Rules
 
@@ -24,4 +45,4 @@ A non-trivial script with loops should have debug calls spanning multiple ranges
 
 The commit skill checks for unusual distributions (e.g., a script with loops that only uses single-digit levels).
 
-Note: The BATS test helper `debug` function (in `test/lib/helpers.bash`) uses a separate 1–5 scale controlled by `$TESTDEBUG`. The two systems are independent.
+Note: The BATS test helper `debug` function (in `tests/lib/helpers.bash` in pgxntool-test) uses a separate 1–5 scale controlled by `$TESTDEBUG`. The two systems are independent.
