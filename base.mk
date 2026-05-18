@@ -296,12 +296,14 @@ endif
 
 # make results: runs `make test` and copies all result files to expected.
 # DO NOT RUN THIS UNLESS YOU'RE CERTAIN ALL YOUR TESTS ARE PASSING!
-# verify-results runs AFTER test (not before) so it checks the fresh regression.diffs
-# from this run, not stale results from a prior run. The old order (verify-results test)
-# checked pre-run state, which would miss failures introduced by the re-run itself.
+#
+# Dependency chain (verify-results: test) guarantees test completes before verify-results
+# checks regression.diffs, even under make -j. Listing both as independent prerequisites
+# of results would allow them to run concurrently, letting verify-results see stale state.
 .PHONY: results
 ifeq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS),yes)
-results: test verify-results
+verify-results: test
+results: verify-results
 else
 results: test
 endif
