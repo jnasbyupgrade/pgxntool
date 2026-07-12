@@ -277,16 +277,13 @@ jobs:
     # CROSS-REPO REUSABLE WORKFLOW — READ BEFORE CHANGING THIS REF
     # See: .github/workflows/CLAUDE.md for full architecture notes.
     #
-    # The ref (@add-ci / @master) must be a static string — GitHub Actions
-    # does not support expressions in uses:. During development on a feature
-    # branch the ref is @<branch> so CI can find run-tests.yml before it
-    # lands on master. Before this PR merges, two things must happen:
-    #   1. pgxntool-test/<branch> merges to master first
-    #   2. This ref is updated from @<branch> to @master
-    #
-    # CURRENT REF: @add-ci (temporary — pgxntool-test/add-ci not yet merged)
+    # The ref must be a static string — GitHub Actions does not support
+    # expressions in uses:. It points at pgxntool-test's run-tests.yml on
+    # master. (During feature-branch development this is temporarily set to
+    # @<branch> so CI can find run-tests.yml before it lands on master, and
+    # flipped back to @master once pgxntool-test/<branch> has merged.)
     # -----------------------------------------------------------------------
-    uses: Postgres-Extensions/pgxntool-test/.github/workflows/run-tests.yml@add-ci
+    uses: Postgres-Extensions/pgxntool-test/.github/workflows/run-tests.yml@master
     with:
       pgxntool-branch: ${{ github.event.pull_request.head.ref }}
       pgxntool-test-ref: master
