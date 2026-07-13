@@ -172,5 +172,9 @@ for entry in "${SETUP_SYMLINKS[@]}"; do
     process_symlink "$dest" "$target"
 done
 
+# Prune pgxntool's own dev-only dirs (.github/, .claude/) that the subtree pull
+# re-introduces but that don't belong in a consuming project (see lib.sh).
+prune_pgxntool_dev_dirs
+
 echo
 echo "Done. Review changes with 'git diff' and commit when ready."
