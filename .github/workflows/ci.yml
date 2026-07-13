@@ -285,5 +285,10 @@ jobs:
     # -----------------------------------------------------------------------
     uses: Postgres-Extensions/pgxntool-test/.github/workflows/run-tests.yml@master
     with:
+      # pgxntool: this PR's own branch, on its own account (a fork for fork PRs).
+      pgxntool-owner: ${{ github.event.pull_request.head.repo.owner.login }}
       pgxntool-branch: ${{ github.event.pull_request.head.ref }}
+      # pgxntool-test: no paired test PR in this path, so use canonical master
+      # from Postgres-Extensions only (never a fork's master).
+      pgxntool-test-owner: Postgres-Extensions
       pgxntool-test-ref: master
