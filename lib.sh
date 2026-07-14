@@ -76,3 +76,26 @@ debug() {
         echo "DEBUG[$level]: $message" >&2
     fi
 }
+
+# Remove pgxntool's own dev-only directories from a consuming project.
+#
+# `git subtree` copies the ENTIRE pgxntool tree into the consumer, including
+# dev-only dirs like .github/ (pgxntool's CI) and .claude/. Those are
+# export-ignored from `make dist` and don't belong in a project that merely
+# embeds pgxntool. (GitHub only runs workflows at the repo root, so a consumer's
+# pgxntool/.github never executes anyway — but it's still clutter.) git subtree
+# doesn't honor export-ignore, so we prune them here after a sync.
+#
+# Must be run from the project root (the dir containing pgxntool/). Safe to call
+# repeatedly; a no-op once the dirs are gone.
+prune_pgxntool_dev_dirs() {
+    local d
+    for d in .github .claude; do
+        [ -e "pgxntool/$d" ] || continue
+        echo "  pgxntool/$d: pruning (pgxntool dev-only, not for embedding projects)"
+        # Stage the removal if tracked; rm -rf guarantees it's gone even if not.
+        # || : keeps this best-effort under `set -e` (rm -rf is the real cleanup).
+        git rm -rq --ignore-unmatch "pgxntool/$d" >/dev/null 2>&1 || :
+        rm -rf "pgxntool/$d"
+    done
+}
