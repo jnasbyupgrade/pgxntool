@@ -34,15 +34,14 @@ When a variable must also override command-line values, combine `override` with 
 
 ## Debug Level Rules (lib.sh `debug` function)
 
-The `debug` function in `lib.sh` uses a range-based numeric level scheme. The order of magnitude gives a rough sense of verbosity; room within each decade allows fine-tuning without renumbering.
+`debug LEVEL "msg"` prints when `DEBUG >= LEVEL`. LEVEL encodes how noisy/esoteric a message is — how far you'd crank `DEBUG` before you'd want to see it — **not** code nesting depth. A top-level line can warrant a high level if it's esoteric, and loop-body detail is usually high precisely because it's noisy. Judge by signal-to-noise.
 
-- **1–9**: High-level script context — script arguments (1), top-level entry/exit (2–3), lower-level helper calls (4–5). Use sparingly.
-- **10–19**: Per-loop-iteration detail — exit with status (10), entry (11), intermediate results (15).
-- **20–29**: Nesting inside loop-level detail.
-- Higher ranges follow the same pattern.
+The tiers are anchors, not strict multiples of 10 — any value in range is fine, leaving room to fine-tune between existing calls without renumbering:
 
-A non-trivial script with loops should have debug calls spanning multiple ranges.
-
-The commit skill checks for unusual distributions (e.g., a script with loops that only uses single-digit levels).
+- **10**: Critical errors, important warnings
+- **20**: Warnings, significant state changes
+- **30**: General debugging, function entry/exit, array operations
+- **40**: Verbose details, loop iterations
+- **50+**: Maximum verbosity (per-iteration innards)
 
 Note: The BATS test helper `debug` function (in `tests/lib/helpers.bash` in pgxntool-test) uses a separate 1–5 scale controlled by `$TESTDEBUG`. The two systems are independent.

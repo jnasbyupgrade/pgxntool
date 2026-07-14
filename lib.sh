@@ -61,17 +61,21 @@ array_not_empty() {
 # Usage: debug LEVEL "message"
 # Outputs message to stderr if DEBUG >= LEVEL
 #
-# Debug levels use ranges, not strict multiples, to leave room for fine-tuning
-# without renumbering. The order of magnitude gives a rough sense of verbosity:
-#   - 1-9:   High-level script context: arguments (1), top-level entry/exit (2-3),
-#            lower-level helper calls (4-5)
-#   - 10-19: Per-iteration detail inside loops: exit+status (10), entry (11),
-#            intermediate results (15)
-#   - 20-29: Nesting inside loop-level detail
-#   - Higher ranges follow the same pattern
+# LEVEL encodes how noisy/esoteric a message is -- roughly, how far you'd crank
+# DEBUG before you'd actually want to see it. Higher = noisier, more rarely
+# useful. This is signal-to-noise, NOT code nesting depth: a top-level line can
+# warrant a high level if it's esoteric, and loop-body detail is usually high
+# precisely because it's noisy.
 #
-# A non-trivial script with loops should have debug calls in multiple ranges.
-# Enable with: DEBUG=15 scriptname.sh
+# The tiers below are anchors, not strict multiples -- pick any value in range
+# to fine-tune between existing calls without renumbering:
+#   - 10: Critical errors, important warnings
+#   - 20: Warnings, significant state changes
+#   - 30: General debugging, function entry/exit, array operations
+#   - 40: Verbose details, loop iterations
+#   - 50+: Maximum verbosity (per-iteration innards)
+#
+# Enable with: DEBUG=30 scriptname.sh
 debug() {
     local level=$1
     shift
