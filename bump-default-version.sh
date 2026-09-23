@@ -8,11 +8,11 @@
 # everything else on that line (e.g. a trailing comment) and leaving the rest of
 # the file untouched.
 #
-# Invoked by `make tag` (see base.mk) right after a new release tag is created,
-# to move default_version to a placeholder alias (PGXNTOOL_POST_TAG_VERSION,
-# default "stable") so ongoing development doesn't silently regenerate and
-# overwrite the just-tagged version's versioned SQL file. Can also be run by
-# hand for the same purpose.
+# Invoked by `make post-tag-version-bump` (see base.mk), run by hand right
+# after a new release tag is created, to move default_version to a
+# placeholder alias (PGXNTOOL_POST_TAG_VERSION, default "stable") so ongoing
+# development doesn't silently regenerate and overwrite the just-tagged
+# version's versioned SQL file.
 
 set -o errexit -o errtrace -o pipefail
 trap 'echo "Error on line ${LINENO}"' ERR

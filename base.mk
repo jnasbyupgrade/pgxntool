@@ -851,15 +851,9 @@ tag:
 # both break that guarantee and risk bumping default_version on a version
 # nobody actually meant to release yet. Invoke this target yourself as an
 # explicit step in your own release process, right after the tag you're
-# actually releasing has been created and pushed.
-#
-# Variable: PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP
-#   - Can be set manually in Makefile or command line
-#   - Allowed values: "yes" or "no" (case-insensitive)
-#   - Default: "yes"
-#   - Set to "no" to make this target a no-op -- useful if a shared release
-#     script always calls it but a specific project wants to opt out
-#     without editing that script
+# actually releasing has been created and pushed. Since it only ever runs
+# when explicitly invoked, it has no PGXNTOOL_ENABLE_* toggle -- to opt out,
+# simply don't call it.
 #
 # Variable: PGXNTOOL_POST_TAG_VERSION
 #   - The placeholder value default_version is bumped to
@@ -870,27 +864,13 @@ tag:
 #   - Path to the script this target invokes to perform the bump
 #   - Default: $(PGXNTOOL_DIR)/bump-default-version.sh
 #
-ifdef PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP
-  # override needed so command-line values (make VAR=YES) are normalized, not silently ignored.
-  # := needed for immediate evaluation of the function call (avoids infinite recursion with =).
-  override PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP),PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP)
-else
-  PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP = yes
-endif
-
 PGXNTOOL_POST_TAG_VERSION ?= stable
 _POST_TAG_VERSION_BUMP_SCRIPT ?= $(PGXNTOOL_DIR)/bump-default-version.sh
 
-ifeq ($(PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP),yes)
 .PHONY: post-tag-version-bump
 post-tag-version-bump:
 	@test -z "$$(git status --porcelain)" || (echo 'Untracked changes! Commit or stash before bumping default_version.'; echo; git status; exit 1)
 	$(_POST_TAG_VERSION_BUMP_SCRIPT) $(PGXNTOOL_POST_TAG_VERSION) $(_PGXNTOOL_CONTROL_FILES)
-else
-.PHONY: post-tag-version-bump
-post-tag-version-bump:
-	@echo "PGXNTOOL_ENABLE_POST_TAG_VERSION_BUMP=no: post-tag-version-bump is disabled, doing nothing"
-endif
 
 .PHONY: forcetag
 forcetag: rmtag tag
