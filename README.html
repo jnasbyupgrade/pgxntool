@@ -518,8 +518,9 @@ body.book #toc,body.book #preamble,body.book h1.sect0,body.book .sect1>h2{page-b
 <li><a href="#_pgxntool_enable_pgxn_install">8.14. PGXNTOOL_ENABLE_PGXN_INSTALL *</a></li>
 <li><a href="#_pgxntool_enable_verify_results">8.15. PGXNTOOL_ENABLE_VERIFY_RESULTS *</a></li>
 <li><a href="#_pgxntool_enable_check_stale_expected">8.16. PGXNTOOL_ENABLE_CHECK_STALE_EXPECTED *</a></li>
-<li><a href="#_pgxntool_check_expected_file_types">8.17. PGXNTOOL_CHECK_EXPECTED_FILE_TYPES *</a></li>
-<li><a href="#_pgxntool_no_pgxs_include">8.18. PGXNTOOL_NO_PGXS_INCLUDE</a></li>
+<li><a href="#_pgxntool_enable_check_tap_output">8.17. PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT *</a></li>
+<li><a href="#_pgxntool_check_expected_file_types">8.18. PGXNTOOL_CHECK_EXPECTED_FILE_TYPES *</a></li>
+<li><a href="#_pgxntool_no_pgxs_include">8.19. PGXNTOOL_NO_PGXS_INCLUDE</a></li>
 </ul>
 </li>
 <li><a href="#_general_postgresql_notes">9. General PostgreSQL Notes</a></li>
@@ -633,10 +634,13 @@ all the targets normally provided by Postgres <a href="http://www.postgresql.org
 <p>Runs your extension&#8217;s test suite: filesystem-installs the extension (unless <code>PGXNTOOL_ENABLE_FS_INSTALL=no</code>) and runs it through PGXS&#8217;s <code>installcheck</code>, first pulling in anything you&#8217;ve hooked into <a href="#_testdeps">testdeps</a> and, if enabled, sanity-checking your test SQL via <a href="#_test_build">test-build</a>.</p>
 </div>
 <div class="paragraph">
-<p><code>make test</code> also fails on two safeguard checks:</p>
+<p><code>make test</code> also fails on these safeguard checks:</p>
 </div>
 <div class="ulist">
 <ul>
+<li>
+<p>The pgTap output check, run after <code>pg_regress</code> finishes: fails if <code>test/results/*.out</code> or the <a href="#_testinstall">test/install</a> actual output has a <code>not ok</code> line without <code># TODO</code>, a missing or duplicate <code>1..N</code> plan line, or a different number of tests than planned&#8201;&#8212;&#8201;even when the output matches its expected file, so a blessed failure still fails. Files with no TAP output are not checked. See <a href="#_pgxntool_enable_check_tap_output">PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT *</a>.</p>
+</li>
 <li>
 <p>The stale-expected-file check, run after <code>pg_regress</code> finishes: fails if <code>test/expected/</code> (or <code>test/build/expected/</code>) has a <code>.out</code> file with no matching <code>.sql</code>, or a file that isn&#8217;t <code>.out</code>. See <a href="#_pgxntool_enable_check_stale_expected">PGXNTOOL_ENABLE_CHECK_STALE_EXPECTED *</a>.</p>
 </li>
@@ -683,7 +687,7 @@ all the targets normally provided by Postgres <a href="http://www.postgresql.org
 <div class="title">Note</div>
 </td>
 <td class="content">
-<code>test</code> exits non-zero (after printing <code>regression.diffs</code>) if any test fails, so CI and other automation can rely on its exit code.
+<code>test</code> exits non-zero (after printing any pgTap problems and <code>regression.diffs</code>) if any test fails, so CI and other automation can rely on its exit code.
 </td>
 </tr>
 </table>
@@ -926,7 +930,7 @@ PGXNTOOL_ENABLE_TEST_INSTALL = yes  # or no</pre>
 <div class="title">Warning</div>
 </td>
 <td class="content">
-<strong><code>test/install/*.out</code> is never actually compared against anything.</strong> Unlike every other test type pgxntool supports, the <code>test/install</code> directory&#8217;s actual output is written to the exact same file as its expected output, so there is no diff — a wrong or changed result will never fail the build, no matter how much it changes. The <strong>only</strong> thing that still fails the build is a hard SQL error, and only if the file sets <code>ON_ERROR_STOP</code> (directly, or via <code>\i test/pgxntool/psql.sql</code>) — without it, psql prints the error, keeps going, and the file "passes" regardless. pgxntool enforces this by default (<code>_check-test-install-error-stop</code>, see <code>PGXNTOOL_ENABLE_TEST_INSTALL_ERROR_STOP_CHECK</code> to disable), but that only guarantees errors are caught — it does not give you real output validation. If you need actual output comparison, put that logic in <code>test/sql</code> instead (or use pgTap assertions from within the install file itself).
+<strong><code>test/install/*.out</code> is never actually compared against anything.</strong> Unlike every other test type pgxntool supports, the <code>test/install</code> directory&#8217;s actual output is written to the exact same file as its expected output, so there is no diff — a wrong or changed result will never fail the build, no matter how much it changes. Apart from pgTap failures (below), the <strong>only</strong> thing that still fails the build is a hard SQL error, and only if the file sets <code>ON_ERROR_STOP</code> (directly, or via <code>\i test/pgxntool/psql.sql</code>) — without it, psql prints the error, keeps going, and the file "passes" regardless. pgxntool enforces this by default (<code>_check-test-install-error-stop</code>, see <code>PGXNTOOL_ENABLE_TEST_INSTALL_ERROR_STOP_CHECK</code> to disable), but that only guarantees errors are caught — it does not give you real output validation. If you need actual output comparison, put that logic in <code>test/sql</code> instead, or use pgTap assertions from within the install file itself: its actual output goes through the same pgTap output check as <code>test/sql</code> (see <a href="#_pgxntool_enable_check_tap_output">PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT *</a>), so a <code>not ok</code> or plan problem there does fail <code>make test</code>.
 </td>
 </tr>
 </table>
@@ -1088,7 +1092,7 @@ It will probably cause problems if you try to create a <code>testdeps</code> rul
 <dl>
 <dt class="hdlist1"><code>pgtap</code> (the default)</dt>
 <dd>
-<p>Scans <code>test/results/*.out</code> for pgTAP <code>not ok</code> lines (ignoring <code># TODO</code> items) and plan-count mismatches, then also checks <code>test/regression.diffs</code> for any output mismatch pgTAP itself wouldn&#8217;t catch. A test that has no expected output file yet is the one exception: it always shows up in <code>regression.diffs</code> (pgxntool creates an empty expected file for it, because <code>pg_regress</code> aborts on a missing one), so <code>make results</code> is allowed to create its first expected output — provided its own pgTAP output is clean and free of SQL errors. If a new test legitimately needs output containing a SQL error blessed, use <code>PGXNTOOL_ENABLE_VERIFY_RESULTS=no</code> for that one run.</p>
+<p>Scans <code>test/results/*.out</code> and the <a href="#_testinstall">test/install</a> actual output for pgTAP <code>not ok</code> lines (ignoring <code># TODO</code> items), missing or duplicate plan lines, and plan-count mismatches (the same check <code>make test</code> runs; it applies here regardless of <code>PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT</code>), then also checks <code>test/regression.diffs</code> for any output mismatch pgTAP itself wouldn&#8217;t catch. A test that has no expected output file yet is the one exception: it always shows up in <code>regression.diffs</code> (pgxntool creates an empty expected file for it, because <code>pg_regress</code> aborts on a missing one), so <code>make results</code> is allowed to create its first expected output — provided its own pgTAP output is clean and free of SQL errors. If a new test legitimately needs output containing a SQL error blessed, use <code>PGXNTOOL_ENABLE_VERIFY_RESULTS=no</code> for that one run.</p>
 </dd>
 <dt class="hdlist1"><code>diffs</code></dt>
 <dd>
@@ -2179,13 +2183,19 @@ Variables marked with <code>*</code> must be set to exactly <code>yes</code> or 
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pgxntool_check_expected_file_types"><a class="anchor" href="#_pgxntool_check_expected_file_types"></a><a class="link" href="#_pgxntool_check_expected_file_types">8.17. PGXNTOOL_CHECK_EXPECTED_FILE_TYPES *</a></h3>
+<h3 id="_pgxntool_enable_check_tap_output"><a class="anchor" href="#_pgxntool_enable_check_tap_output"></a><a class="link" href="#_pgxntool_enable_check_tap_output">8.17. PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT *</a></h3>
+<div class="paragraph">
+<p>Default: <code>yes</code>. Enables or disables the pgTap output check that <code>make test</code> runs after <code>pg_regress</code>: it fails on a <code>not ok</code> line without <code># TODO</code>, a missing or duplicate <code>1..N</code> plan line, or a plan/test count mismatch in <code>test/results/*.out</code> or the <a href="#_testinstall">test/install</a> actual output. Files with no TAP output are not checked. This governs only <code>make test</code>; the <a href="#_verify_results_safeguard">verify-results safeguard</a>'s <code>pgtap</code> mode always runs the same check before <code>make results</code> (use <code>PGXNTOOL_ENABLE_VERIFY_RESULTS=no</code> to bypass it there).</p>
+</div>
+</div>
+<div class="sect2">
+<h3 id="_pgxntool_check_expected_file_types"><a class="anchor" href="#_pgxntool_check_expected_file_types"></a><a class="link" href="#_pgxntool_check_expected_file_types">8.18. PGXNTOOL_CHECK_EXPECTED_FILE_TYPES *</a></h3>
 <div class="paragraph">
 <p>Default: <code>yes</code>. Sub-check of <code>_check-stale-expected</code>, independent of <code>PGXNTOOL_ENABLE_CHECK_STALE_EXPECTED</code>: fails (with a distinct error message and exit code from the orphaned-<code>.out</code> check) if <code>test/expected/</code> (or <code>test/build/expected/</code>) contains any file that isn&#8217;t <code>*.out</code>. Set to <code>no</code> to disable just this sub-check while leaving the orphaned-<code>.out</code> check active.</p>
 </div>
 </div>
 <div class="sect2">
-<h3 id="_pgxntool_no_pgxs_include"><a class="anchor" href="#_pgxntool_no_pgxs_include"></a><a class="link" href="#_pgxntool_no_pgxs_include">8.18. PGXNTOOL_NO_PGXS_INCLUDE</a></h3>
+<h3 id="_pgxntool_no_pgxs_include"><a class="anchor" href="#_pgxntool_no_pgxs_include"></a><a class="link" href="#_pgxntool_no_pgxs_include">8.19. PGXNTOOL_NO_PGXS_INCLUDE</a></h3>
 <div class="paragraph">
 <p>Default: unset (PGXS is included normally). Skips including PGXS (<code>$(PGXS)</code>) entirely. This is only for advanced scenarios where you need to manage the PGXS include yourself; most projects should never set this.</p>
 </div>
@@ -2217,7 +2227,7 @@ but that PGXNtool has no part in. It currently covers which <code>.control</code
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2026-10-07 17:56:47 -0500
+Last updated 2026-10-12 18:23:13 -0500
 </div>
 </div>
 </body>

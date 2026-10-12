@@ -200,11 +200,13 @@ endif
 # IMPORTANT: test/install does NOT get a real pg_regress diff, unlike every
 # other test type pgxntool supports. Its schedule entries reference the
 # original file via a relative "../install/<name>" path, so pg_regress
-# resolves BOTH the expected output and the actual output to the exact same
-# file (test/install/<name>.out) -- the actual run silently overwrites the
-# expected file in place, rather than ever comparing it against anything. A
-# content difference (wrong output, a changed column, whatever) will NEVER
-# fail this way, no matter how it changes -- see issue #97.
+# resolves the expected output to $(TESTDIR)/install/<name>.out and the actual
+# output to $(TESTOUT)/install/<name>.out -- the exact same file under the
+# default TESTOUT = TESTDIR. The actual run silently overwrites the expected
+# file in place, rather than ever comparing it against anything. A content
+# difference (wrong output, a changed column, whatever) will NEVER fail this
+# way, no matter how it changes -- see issue #97. The TAP check (see
+# PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT) does still scan that actual output.
 #
 # The only thing that forces the build to fail is psql's own exit code: a
 # statement that raises a hard error only aborts psql (non-zero exit, which
@@ -302,8 +304,9 @@ _PGXNTOOL_CHECK_TEST_INSTALL_ERROR_STOP_SCRIPT ?= $(PGXNTOOL_DIR)/test/bin/check
 #   - Controls how verify-results detects test failures
 #   - Allowed values: "pgtap" or "diffs" (case-insensitive); anything else,
 #     including an empty value, is a parse-time error
-#   - "pgtap" (default): scans test/results/*.out for "not ok" lines and plan
-#     mismatches (TAP failures). Also checks regression.diffs as a fallback.
+#   - "pgtap" (default): runs check-tap-output.sh over test/results/*.out and
+#     the test/install actual output ("not ok" lines, missing/duplicate plan
+#     lines, plan mismatches). Also checks regression.diffs as a fallback.
 #     Use this mode when your test suite uses pgTap.
 #   - "diffs": checks only for regression.diffs existence (classic pg_regress behavior)
 #     Use this mode when your tests use plain SQL expected-output comparison only.
@@ -363,6 +366,34 @@ endif
 
 _PGXNTOOL_CHECK_STALE_EXPECTED_SCRIPT ?= $(PGXNTOOL_DIR)/test/bin/check-stale-expected.sh
 
+# ------------------------------------------------------------------------------
+# TAP output check: fail `make test` on pgTap failures in actual output
+# ------------------------------------------------------------------------------
+# Variable: PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT
+#   - Can be set manually in Makefile or command line
+#   - Allowed values: "yes" or "no" (case-insensitive)
+#   - Default: "yes" (enabled by default for all pgxntool projects)
+#   - When "yes", the `test` recipe runs check-tap-output.sh over
+#     $(TESTOUT)/results/*.out (plus the test/install actual output when
+#     test/install is enabled) and fails on a `not ok` without `# TODO`, a
+#     missing or duplicate plan line, or a plan/test count mismatch -- even
+#     when the output matches its expected file
+#   - Governs only `make test`: verify-results' pgtap mode always runs the
+#     same check before `make results`
+#
+# Variable: _PGXNTOOL_CHECK_TAP_OUTPUT_SCRIPT (internal shim, not user-facing)
+#   - Path to the script the `test` recipe invokes
+#   - Default: $(PGXNTOOL_DIR)/test/bin/check-tap-output.sh
+#
+# Implementation: See the `test:` recipe (search for "test: $(TEST_DEPS)").
+ifdef PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT
+  override PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT),PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT)
+else
+  PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT = yes
+endif
+
+_PGXNTOOL_CHECK_TAP_OUTPUT_SCRIPT ?= $(PGXNTOOL_DIR)/test/bin/check-tap-output.sh
+
 # Generate unique database name for tests to prevent conflicts across projects
 # Uses project name + first 5 chars of md5 hash of current directory
 # This prevents multiple test runs in different directories from clobbering each other
@@ -414,6 +445,10 @@ endif
 ifeq ($(PGXNTOOL_ENABLE_TEST_INSTALL),yes)
 _PGXNTOOL_INSTALL_SCHEDULE = $(TESTDIR)/install/schedule
 EXTRA_CLEAN += $(_PGXNTOOL_INSTALL_SCHEDULE)
+
+# Actual output of each install file (see the test/install section above),
+# for the TAP output check.
+_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES = $(patsubst $(TESTDIR)/install/%.sql,$(TESTOUT)/install/%.out,$(TEST_INSTALL_SQL_FILES))
 
 # Add install schedule; REGRESS stays as-is (regular tests run after schedule)
 REGRESS_OPTS += --schedule=$(_PGXNTOOL_INSTALL_SCHEDULE)
@@ -529,8 +564,20 @@ ifeq ($(PGXNTOOL_ENABLE_FS_INSTALL),yes)
 TEST_DEPS += install
 endif
 TEST_DEPS += installcheck
+#
+# The TAP check runs in this recipe rather than as a TEST_DEPS target so that
+# `make PGXNTOOL_ENABLE_VERIFY_RESULTS=no results` (which depends on TEST_DEPS,
+# not on `test`) still blesses output unconditionally. Both checks always run,
+# so a failure reports TAP problems and regression.diffs together.
 test: $(TEST_DEPS)
+ifeq ($(PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT),yes)
+	@status=0; \
+	$(_PGXNTOOL_CHECK_TAP_OUTPUT_SCRIPT) $(TESTOUT)/results/*.out $(_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES) || status=1; \
+	if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; status=1; fi; \
+	exit $$status
+else
 	@if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; exit 1; fi
+endif
 
 #
 # verify-results: Safeguard for make results
@@ -540,7 +587,7 @@ ifeq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS),yes)
 .PHONY: verify-results
 ifeq ($(PGXNTOOL_VERIFY_RESULTS_MODE),pgtap)
 verify-results:
-	@$(PGXNTOOL_DIR)/verify-results-pgtap.sh $(TESTOUT)
+	@$(PGXNTOOL_DIR)/verify-results-pgtap.sh $(TESTOUT) $(_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES)
 else
 verify-results:
 	@if [ -r $(TESTOUT)/regression.diffs ]; then \

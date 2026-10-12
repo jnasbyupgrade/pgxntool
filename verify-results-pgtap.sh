@@ -1,37 +1,24 @@
 #!/usr/bin/env bash
 # pgxntool/verify-results-pgtap.sh - Check pgtap results before 'make results'
 #
-# Scans pgtap output files for failures and plan mismatches, then checks
-# regression.diffs as a fallback, ignoring entries for tests that have no
-# expected output yet. Exits non-zero if any problems are found.
+# Scans pgtap output files for failures and plan problems (see
+# test/bin/check-tap-output.sh), then checks regression.diffs as a fallback,
+# ignoring entries for tests that have no expected output yet. Exits non-zero
+# if any problems are found.
 #
-# Usage: verify-results-pgtap.sh TESTOUT
+# Usage: verify-results-pgtap.sh TESTOUT [FILE...]
+#   FILE: additional pgtap output files to scan besides TESTOUT/results/*.out
 #
 # Called by the verify-results target in base.mk (pgtap mode).
 
 set -e
 
-TESTOUT="${1:?Usage: verify-results-pgtap.sh TESTOUT}"
+TESTOUT="${1:?Usage: verify-results-pgtap.sh TESTOUT [FILE...]}"
+shift
 
-# Check for pgtap failures in result files (excluding TODO items)
-failed=0
-for f in "$TESTOUT"/results/*.out; do
-	[ -f "$f" ] || continue
-	if grep -q '^not ok' "$f"; then
-		notok=$(grep '^not ok' "$f" | grep -v '# TODO' || true)
-		if [ -n "$notok" ]; then
-			echo "ERROR: pgtap failure detected in $f"
-			echo "$notok"
-			failed=1
-		fi
-	fi
-	if grep -q 'Looks like you planned' "$f"; then
-		echo "ERROR: pgtap plan mismatch in $f"
-		grep 'Looks like you planned' "$f"
-		failed=1
-	fi
-done
-if [ $failed -ne 0 ]; then
+# Check for pgtap failures in result files and any extra files (base.mk passes
+# the test/install actual outputs).
+if ! "$(dirname "$0")/test/bin/check-tap-output.sh" "$TESTOUT"/results/*.out "$@"; then
 	echo
 	echo "pgtap failures detected. Cannot run 'make results'."
 	exit 1
