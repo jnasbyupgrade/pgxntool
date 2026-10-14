@@ -201,9 +201,12 @@ endif
 # other test type pgxntool supports. Its schedule entries reference the
 # original file via a relative "../install/<name>" path, so pg_regress
 # resolves the expected output to $(TESTDIR)/install/<name>.out and the actual
-# output to $(TESTOUT)/install/<name>.out -- the exact same file under the
-# default TESTOUT = TESTDIR. The actual run silently overwrites the expected
-# file in place, rather than ever comparing it against anything. A content
+# output to $(TESTOUT)/install/<name>.out. When TESTOUT differs from TESTDIR,
+# $(TESTOUT)/install is a symlink to $(TESTDIR)/install (see
+# _test-install-output-link), so the output always lands in
+# $(TESTDIR)/install/ and both paths are the same file. The actual run
+# silently overwrites the expected file in place, rather than ever comparing
+# it against anything. A content
 # difference (wrong output, a changed column, whatever) will NEVER fail this
 # way, no matter how it changes -- see issue #97. The TAP check (see
 # PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT) does still scan that actual output.
@@ -448,7 +451,7 @@ EXTRA_CLEAN += $(_PGXNTOOL_INSTALL_SCHEDULE)
 
 # Actual output of each install file (see the test/install section above),
 # for the TAP output check.
-_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES = $(patsubst $(TESTDIR)/install/%.sql,$(TESTOUT)/install/%.out,$(TEST_INSTALL_SQL_FILES))
+_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES = $(TEST_INSTALL_SQL_FILES:.sql=.out)
 
 # Add install schedule; REGRESS stays as-is (regular tests run after schedule)
 REGRESS_OPTS += --schedule=$(_PGXNTOOL_INSTALL_SCHEDULE)
@@ -462,6 +465,24 @@ $(_PGXNTOOL_INSTALL_SCHEDULE):
 	done
 
 installcheck: $(_PGXNTOOL_INSTALL_SCHEDULE)
+
+# pg_regress writes the actual output to $(TESTOUT)/results/../install/ but
+# diffs it against $(TESTDIR)/expected/../install/; those only agree if
+# $(TESTOUT)/install and $(TESTDIR)/install are the same directory. Never
+# replace something else already at that path: it isn't ours to delete.
+ifneq ($(abspath $(TESTOUT)),$(abspath $(TESTDIR)))
+.PHONY: _test-install-output-link
+_test-install-output-link:
+	@link='$(TESTOUT)/install'; target='$(abspath $(TESTDIR)/install)'; \
+	if [ -L "$$link" ] && [ "$$(readlink "$$link")" = "$$target" ]; then exit 0; fi; \
+	if [ -e "$$link" ] || [ -L "$$link" ]; then \
+		echo "ERROR: $$link exists and is not a symlink to $$target" >&2; \
+		echo "test/install output must land in $$target; remove $$link and rerun" >&2; \
+		exit 1; \
+	fi; \
+	mkdir -p '$(TESTOUT)' && ln -s "$$target" "$$link"
+installcheck: | _test-install-output-link
+endif
 endif
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
