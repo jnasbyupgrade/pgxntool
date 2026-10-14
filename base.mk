@@ -304,13 +304,19 @@ _PGXNTOOL_CHECK_TEST_INSTALL_ERROR_STOP_SCRIPT ?= $(PGXNTOOL_DIR)/test/bin/check
 #   - Usage: Controls whether verify-results target exists and blocks make results
 #
 # Variable: PGXNTOOL_VERIFY_RESULTS_MODE
-#   - Controls how verify-results detects test failures
-#   - Allowed values: "pgtap" or "diffs" (case-insensitive); anything else,
-#     including an empty value, is a parse-time error
+#   - Controls how verify-results detects test failures, and in "pgtap-only"
+#     mode how `make test` does too
+#   - Allowed values: "pgtap", "pgtap-only" or "diffs" (case-insensitive);
+#     anything else, including an empty value, is a parse-time error
 #   - "pgtap" (default): runs check-tap-output.sh over test/results/*.out and
 #     the test/install actual output ("not ok" lines, missing/duplicate plan
 #     lines, plan mismatches). Also checks regression.diffs as a fallback.
 #     Use this mode when your test suite uses pgTap.
+#   - "pgtap-only": like "pgtap", but a test whose result file is TAP output
+#     passes on its TAP and on having no SQL error line; its regression.diffs
+#     block is ignored, in `make test` as well as verify-results. For pgTap
+#     suites whose assertion descriptions vary per run. Requires
+#     PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT=yes.
 #   - "diffs": checks only for regression.diffs existence (classic pg_regress behavior)
 #     Use this mode when your tests use plain SQL expected-output comparison only.
 #
@@ -326,7 +332,7 @@ endif
 
 # Default mode: pgtap (scans results/*.out for TAP failures)
 PGXNTOOL_VERIFY_RESULTS_MODE ?= pgtap
-override PGXNTOOL_VERIFY_RESULTS_MODE := $(call _pgxntool_validate_choice,$(PGXNTOOL_VERIFY_RESULTS_MODE),PGXNTOOL_VERIFY_RESULTS_MODE,pgtap diffs)
+override PGXNTOOL_VERIFY_RESULTS_MODE := $(call _pgxntool_validate_choice,$(PGXNTOOL_VERIFY_RESULTS_MODE),PGXNTOOL_VERIFY_RESULTS_MODE,pgtap pgtap-only diffs)
 
 # ------------------------------------------------------------------------------
 # _check-stale-expected: catch orphaned/unexpected test/expected/ files
@@ -381,8 +387,10 @@ _PGXNTOOL_CHECK_STALE_EXPECTED_SCRIPT ?= $(PGXNTOOL_DIR)/test/bin/check-stale-ex
 #     test/install is enabled) and fails on a `not ok` without `# TODO`, a
 #     missing or duplicate plan line, or a plan/test count mismatch -- even
 #     when the output matches its expected file
-#   - Governs only `make test`: verify-results' pgtap mode always runs the
+#   - Governs only `make test`: verify-results' pgtap modes always run the
 #     same check before `make results`
+#   - Must be "yes" when PGXNTOOL_VERIFY_RESULTS_MODE=pgtap-only, since that
+#     mode's TAP tests would otherwise pass on nothing
 #
 # Variable: _PGXNTOOL_CHECK_TAP_OUTPUT_SCRIPT (internal shim, not user-facing)
 #   - Path to the script the `test` recipe invokes
@@ -393,6 +401,9 @@ ifdef PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT
   override PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT := $(call pgxntool_validate_yesno,$(PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT),PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT)
 else
   PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT = yes
+endif
+ifeq ($(PGXNTOOL_VERIFY_RESULTS_MODE)$(PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT),pgtap-onlyno)
+  $(error PGXNTOOL_VERIFY_RESULTS_MODE=pgtap-only requires PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT=yes; otherwise TAP tests pass on nothing)
 endif
 
 _PGXNTOOL_CHECK_TAP_OUTPUT_SCRIPT ?= $(PGXNTOOL_DIR)/test/bin/check-tap-output.sh
@@ -589,12 +600,14 @@ TEST_DEPS += installcheck
 # The TAP check runs in this recipe rather than as a TEST_DEPS target so that
 # `make PGXNTOOL_ENABLE_VERIFY_RESULTS=no results` (which depends on TEST_DEPS,
 # not on `test`) still blesses output unconditionally. Both checks always run,
-# so a failure reports TAP problems and regression.diffs together.
+# so a failure reports TAP problems and regression.diffs together. In
+# pgtap-only mode, verify-results-pgtap.sh decides which regression.diffs
+# blocks still count.
 test: $(TEST_DEPS)
 ifeq ($(PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT),yes)
 	@status=0; \
 	$(_PGXNTOOL_CHECK_TAP_OUTPUT_SCRIPT) $(TESTOUT)/results/*.out $(_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES) || status=1; \
-	if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; status=1; fi; \
+	$(if $(filter pgtap-only,$(PGXNTOOL_VERIFY_RESULTS_MODE)),$(PGXNTOOL_DIR)/verify-results-pgtap.sh --pgtap-only --for-test $(TESTOUT) || status=1;,if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; status=1; fi;) \
 	exit $$status
 else
 	@if [ -r $(TESTOUT)/regression.diffs ]; then cat $(TESTOUT)/regression.diffs; exit 1; fi
@@ -606,9 +619,9 @@ endif
 # Checks if tests are passing before allowing make results to proceed
 ifeq ($(PGXNTOOL_ENABLE_VERIFY_RESULTS),yes)
 .PHONY: verify-results
-ifeq ($(PGXNTOOL_VERIFY_RESULTS_MODE),pgtap)
+ifneq ($(PGXNTOOL_VERIFY_RESULTS_MODE),diffs)
 verify-results:
-	@$(PGXNTOOL_DIR)/verify-results-pgtap.sh $(TESTOUT) $(_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES)
+	@$(PGXNTOOL_DIR)/verify-results-pgtap.sh $(if $(filter pgtap-only,$(PGXNTOOL_VERIFY_RESULTS_MODE)),--pgtap-only )$(TESTOUT) $(_PGXNTOOL_TEST_INSTALL_OUTPUT_FILES)
 else
 verify-results:
 	@if [ -r $(TESTOUT)/regression.diffs ]; then \

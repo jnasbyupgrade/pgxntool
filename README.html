@@ -642,6 +642,9 @@ all the targets normally provided by Postgres <a href="http://www.postgresql.org
 <p>The pgTap output check, run after <code>pg_regress</code> finishes: fails if <code>test/results/*.out</code> or the <a href="#_testinstall">test/install</a> actual output has a <code>not ok</code> line without <code># TODO</code>, a missing or duplicate <code>1..N</code> plan line, or a different number of tests than planned&#8201;&#8212;&#8201;even when the output matches its expected file, so a blessed failure still fails. Files with no TAP output are not checked. See <a href="#_pgxntool_enable_check_tap_output">PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT *</a>.</p>
 </li>
 <li>
+<p><code>regression.diffs</code>: any difference from expected output fails, except, under <a href="#_pgtap_only"><code>PGXNTOOL_VERIFY_RESULTS_MODE=pgtap-only</code></a>, in a test whose output is TAP. Such a test fails instead on a SQL error line, and <code>make test</code> prints a <code>NOTE</code> naming the TAP tests whose differences it ignored.</p>
+</li>
+<li>
 <p>The stale-expected-file check, run after <code>pg_regress</code> finishes: fails if <code>test/expected/</code> (or <code>test/build/expected/</code>) has a <code>.out</code> file with no matching <code>.sql</code>, or a file that isn&#8217;t <code>.out</code>. See <a href="#_pgxntool_enable_check_stale_expected">PGXNTOOL_ENABLE_CHECK_STALE_EXPECTED *</a>.</p>
 </li>
 <li>
@@ -1086,13 +1089,17 @@ It will probably cause problems if you try to create a <code>testdeps</code> rul
 <div class="sect3">
 <h4 id="_verify_results_safeguard"><a class="anchor" href="#_verify_results_safeguard"></a><a class="link" href="#_verify_results_safeguard">4.7.1. verify-results safeguard</a></h4>
 <div class="paragraph">
-<p>By default, <code>make results</code> will refuse to run if your tests are failing, so you can&#8217;t accidentally promote incorrect output into the new expected results. Which failures it looks for is controlled by <code>PGXNTOOL_VERIFY_RESULTS_MODE</code>, which must be one of these two values (case-insensitive; anything else is a hard <code>make</code> error):</p>
+<p>By default, <code>make results</code> will refuse to run if your tests are failing, so you can&#8217;t accidentally promote incorrect output into the new expected results. Which failures it looks for is controlled by <code>PGXNTOOL_VERIFY_RESULTS_MODE</code>, which must be one of these three values (case-insensitive; anything else is a hard <code>make</code> error):</p>
 </div>
 <div class="dlist">
 <dl>
 <dt class="hdlist1"><code>pgtap</code> (the default)</dt>
 <dd>
 <p>Scans <code>test/results/*.out</code> and the <a href="#_testinstall">test/install</a> actual output for pgTAP <code>not ok</code> lines (ignoring <code># TODO</code> items), missing or duplicate plan lines, and plan-count mismatches (the same check <code>make test</code> runs; it applies here regardless of <code>PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT</code>), then also checks <code>test/regression.diffs</code> for any output mismatch pgTAP itself wouldn&#8217;t catch. A test that has no expected output file yet is the one exception: it always shows up in <code>regression.diffs</code> (pgxntool creates an empty expected file for it, because <code>pg_regress</code> aborts on a missing one), so <code>make results</code> is allowed to create its first expected output — provided its own pgTAP output is clean and free of SQL errors. If a new test legitimately needs output containing a SQL error blessed, use <code>PGXNTOOL_ENABLE_VERIFY_RESULTS=no</code> for that one run.</p>
+</dd>
+<dt class="hdlist1"><code>pgtap-only</code></dt>
+<dd>
+<p>Like <code>pgtap</code>, except that a test whose output is TAP is judged only by its pgTAP output and by having no SQL error line; its <code>regression.diffs</code> entry is ignored. This mode governs <code>make test</code> too; see <a href="#_pgtap_only">pgtap-only</a>.</p>
 </dd>
 <dt class="hdlist1"><code>diffs</code></dt>
 <dd>
@@ -1112,7 +1119,7 @@ It will probably cause problems if you try to create a <code>testdeps</code> rul
 <div class="listingblock">
 <div class="content">
 <pre># In your Makefile
-PGXNTOOL_VERIFY_RESULTS_MODE = diffs  # or pgtap (the default)</pre>
+PGXNTOOL_VERIFY_RESULTS_MODE = diffs  # or pgtap-only, or pgtap (the default)</pre>
 </div>
 </div>
 <div class="paragraph">
@@ -2122,7 +2129,7 @@ Variables marked with <code>*</code> must be set to exactly <code>yes</code> or 
 <div class="sect2">
 <h3 id="_pgxntool_verify_results_mode"><a class="anchor" href="#_pgxntool_verify_results_mode"></a><a class="link" href="#_pgxntool_verify_results_mode">8.9. PGXNTOOL_VERIFY_RESULTS_MODE</a></h3>
 <div class="paragraph">
-<p>Default: <code>pgtap</code>. Controls how the <a href="#_verify_results_safeguard">verify-results safeguard</a> decides whether tests are failing. Must be <code>pgtap</code> or <code>diffs</code> (case-insensitive) when given explicitly; any other value, including an empty one, is a hard <code>make</code> error.</p>
+<p>Default: <code>pgtap</code>. Controls how the <a href="#_verify_results_safeguard">verify-results safeguard</a> decides whether tests are failing. Must be <code>pgtap</code>, <code>pgtap-only</code> or <code>diffs</code> (case-insensitive) when given explicitly; any other value, including an empty one, is a hard <code>make</code> error.</p>
 </div>
 <div class="sect3">
 <h4 id="_pgtap"><a class="anchor" href="#_pgtap"></a><a class="link" href="#_pgtap">8.9.1. pgtap</a></h4>
@@ -2131,7 +2138,19 @@ Variables marked with <code>*</code> must be set to exactly <code>yes</code> or 
 </div>
 </div>
 <div class="sect3">
-<h4 id="_diffs"><a class="anchor" href="#_diffs"></a><a class="link" href="#_diffs">8.9.2. diffs</a></h4>
+<h4 id="_pgtap_only"><a class="anchor" href="#_pgtap_only"></a><a class="link" href="#_pgtap_only">8.9.2. pgtap-only</a></h4>
+<div class="paragraph">
+<p>For pgTap suites whose output can&#8217;t byte-match a committed expected file, such as assertion descriptions that embed a per-run role name. A test whose result file is TAP output (it has a top-level <code>ok N</code>, <code>not ok N</code> or <code>1..N</code> line) passes on two things: the pgTap output check, and no SQL error line (<code>ERROR:</code> as psql prints it). Its <code>regression.diffs</code> entry is ignored. This applies to <code>make test</code> as well as <code>make results</code>; <code>make test</code> prints one <code>NOTE</code> line naming the TAP tests whose differences it ignored.</p>
+</div>
+<div class="paragraph">
+<p>A test without TAP output is still judged by its diff: any difference fails <code>make test</code>, and <code>make results</code> applies the <code>pgtap</code> rules above. <a href="#_testinstall">test/install</a> output gets the pgTap output check only.</p>
+</div>
+<div class="paragraph">
+<p>Requires <code>PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT=yes</code>; setting it to <code>no</code> in this mode is a hard <code>make</code> error, since TAP tests would then pass on nothing.</p>
+</div>
+</div>
+<div class="sect3">
+<h4 id="_diffs"><a class="anchor" href="#_diffs"></a><a class="link" href="#_diffs">8.9.3. diffs</a></h4>
 <div class="paragraph">
 <p>Checks only for <code>regression.diffs</code>, matching classic pg_regress behavior. Use this mode when your tests use plain SQL expected-output comparison only.</p>
 </div>
@@ -2185,7 +2204,7 @@ Variables marked with <code>*</code> must be set to exactly <code>yes</code> or 
 <div class="sect2">
 <h3 id="_pgxntool_enable_check_tap_output"><a class="anchor" href="#_pgxntool_enable_check_tap_output"></a><a class="link" href="#_pgxntool_enable_check_tap_output">8.17. PGXNTOOL_ENABLE_CHECK_TAP_OUTPUT *</a></h3>
 <div class="paragraph">
-<p>Default: <code>yes</code>. Enables or disables the pgTap output check that <code>make test</code> runs after <code>pg_regress</code>: it fails on a <code>not ok</code> line without <code># TODO</code>, a missing or duplicate <code>1..N</code> plan line, or a plan/test count mismatch in <code>test/results/*.out</code> or the <a href="#_testinstall">test/install</a> actual output. Files with no TAP output are not checked. This governs only <code>make test</code>; the <a href="#_verify_results_safeguard">verify-results safeguard</a>'s <code>pgtap</code> mode always runs the same check before <code>make results</code> (use <code>PGXNTOOL_ENABLE_VERIFY_RESULTS=no</code> to bypass it there).</p>
+<p>Default: <code>yes</code>. Enables or disables the pgTap output check that <code>make test</code> runs after <code>pg_regress</code>: it fails on a <code>not ok</code> line without <code># TODO</code>, a missing or duplicate <code>1..N</code> plan line, or a plan/test count mismatch in <code>test/results/*.out</code> or the <a href="#_testinstall">test/install</a> actual output. Files with no TAP output are not checked. This governs only <code>make test</code>; the <a href="#_verify_results_safeguard">verify-results safeguard</a>'s <code>pgtap</code> and <code>pgtap-only</code> modes always run the same check before <code>make results</code> (use <code>PGXNTOOL_ENABLE_VERIFY_RESULTS=no</code> to bypass it there).</p>
 </div>
 </div>
 <div class="sect2">
@@ -2227,7 +2246,7 @@ but that PGXNtool has no part in. It currently covers which <code>.control</code
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2026-10-14 14:03:32 -0500
+Last updated 2026-10-14 14:12:42 -0500
 </div>
 </div>
 </body>

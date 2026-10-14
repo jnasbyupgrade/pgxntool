@@ -20,10 +20,17 @@
 # Arguments that don't exist are ignored, so an unmatched shell glob is
 # harmless.
 #
-# Usage: check-tap-output.sh FILE...
-# Exits 1 if any file fails, else 0.
+# Usage: check-tap-output.sh [--list] FILE...
+# Exits 1 if any file fails, else 0. With --list, checks nothing: prints
+# each FILE that counts as TAP output, one per line, and exits 0.
 
 set -o errexit -o errtrace -o pipefail
+
+list=
+if [ "${1:-}" = --list ]; then
+  list=1
+  shift
+fi
 
 failed=0
 for f in "$@"; do
@@ -37,6 +44,11 @@ for f in "$@"; do
   ' "$f")
 
   [ "$tests" -gt 0 ] || [ "$plans" -gt 0 ] || continue
+
+  if [ -n "$list" ]; then
+    printf '%s\n' "$f"
+    continue
+  fi
 
   notok=$(grep '^not ok' "$f" | grep -v '# TODO' || true)
   if [ -n "$notok" ]; then
