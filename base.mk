@@ -604,11 +604,10 @@ _PGXNTOOL_EXTENSIONS = $(basename $(_PGXNTOOL_CONTROL_FILES))
 # "which pg_tle to test against" env var (see issue #78) -- that collided
 # with this variable silently instead of erroring.
 .PHONY: pgtle
-# Chained with && so a failure for any extension, not just the last, fails
-# the target.
 pgtle: all control.mk $(_PGXNTOOL_CONTROL_FILES)
-	@$(foreach ext,$(_PGXNTOOL_EXTENSIONS),\
-		$(PGXNTOOL_DIR)/pgtle.sh --extension $(ext) $(if $(PGXNTOOL_PGTLE_VERSION),--pgtle-version $(PGXNTOOL_PGTLE_VERSION)) &&) true
+	@for ext in $(_PGXNTOOL_EXTENSIONS); do \
+		$(PGXNTOOL_DIR)/pgtle.sh --extension $$ext $(if $(PGXNTOOL_PGTLE_VERSION),--pgtle-version $(PGXNTOOL_PGTLE_VERSION)) || exit 1; \
+	done
 
 #
 # pg_tle installation support
