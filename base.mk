@@ -192,9 +192,7 @@ endif
 # ------------------------------------------------------------------------------
 # test/install: Run setup files before all tests in the same pg_regress session
 # ------------------------------------------------------------------------------
-# Purpose: test/install only sets up the environment for the real tests; its
-#          output is not a test result, but a failure must abort the run.
-#          Runs files from test/install/ before all test/sql/ files within a
+# Purpose: Runs files from test/install/ before all test/sql/ files within a
 #          SINGLE pg_regress invocation via schedule files. This ensures that
 #          state created by install files (tables, extensions, etc.) persists
 #          into the main test suite.
