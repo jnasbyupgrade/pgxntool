@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # pgxntool/verify-tap.sh - Fail if TAP (pgTAP) output shows a failed test run
 #
-# Usage: verify-tap.sh [FILE|-]...
+# Usage: verify-tap.sh [--skip-non-tap] [FILE|-]...
 #
 # Each FILE is judged as its own TAP stream; with no arguments, or for `-`,
 # stdin is read. Problems go to stderr, naming the source ("stdin" or the
@@ -17,19 +17,27 @@
 #     (plan(N)) or after every one (no_plan() plus finish())
 #   - the number of test lines (`ok N`/`not ok N`) equals N; `1..0` with no
 #     tests passes
-# A stream with no plan line and no test lines fails: nothing ran.
+# A stream with no plan line and no test lines fails: nothing ran. With
+# --skip-non-tap, such a stream (plain SQL output, say) is skipped silently
+# instead.
 
 set -o errexit -o errtrace -o pipefail
 
 usage() {
-  echo "Usage: verify-tap.sh [FILE|-]..."
+  echo "Usage: verify-tap.sh [--skip-non-tap] [FILE|-]..."
 }
 
+SKIP_NON_TAP=
+files=()
 for arg in "$@"; do
   case $arg in
   -h|--help)
     usage
     exit 0
+    ;;
+  --skip-non-tap)
+    SKIP_NON_TAP=1
+    continue
     ;;
   -) ;;
   -*)
@@ -44,8 +52,10 @@ for arg in "$@"; do
     fi
     ;;
   esac
+  files+=("$arg")
 done
-[ $# -gt 0 ] || set -- -
+[ ${#files[@]} -gt 0 ] || files=(-)
+export SKIP_NON_TAP
 
 # Judges the stream on stdin, named $SRC. The input is redirected rather than
 # passed as an awk operand so a path containing `=` isn't taken as an
@@ -64,6 +74,7 @@ check_stream() {
     END {
       src = ENVIRON["SRC"]
       if (tests + plans == 0) {
+        if (ENVIRON["SKIP_NON_TAP"] != "") exit 0
         print "ERROR: no TAP output in " src " (no plan line or test lines); nothing ran"
         exit 1
       }
@@ -102,7 +113,7 @@ check_stream() {
 }
 
 failed=0
-for arg in "$@"; do
+for arg in "${files[@]}"; do
   if [ "$arg" = - ]; then
     SRC=stdin check_stream || failed=1
   else

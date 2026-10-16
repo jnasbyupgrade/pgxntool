@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # pgxntool/verify-results-pgtap.sh - Check pgtap results before 'make results'
 #
-# Runs verify-tap.sh on every pgtap output file, then checks regression.diffs
-# as a fallback, ignoring entries for tests that have no expected output yet.
-# Exits non-zero if any problems are found.
+# Runs verify-tap.sh --skip-non-tap on every result file, then checks
+# regression.diffs as a fallback, ignoring entries for tests that have no
+# expected output yet. Exits non-zero if any problems are found.
 #
 # Usage: verify-results-pgtap.sh TESTOUT
 #
@@ -13,16 +13,13 @@ set -e
 
 TESTOUT="${1:?Usage: verify-results-pgtap.sh TESTOUT}"
 
-# Only files holding a TAP line are pgtap output; plain-SQL tests are left to
-# the regression.diffs check below.
-tap_files=()
+# --skip-non-tap leaves plain-SQL tests to the regression.diffs check below.
+result_files=()
 for f in "$TESTOUT"/results/*.out; do
 	[ -f "$f" ] || continue
-	if grep -qE '^(not )?ok [0-9]|^1\.\.[0-9]' "$f"; then
-		tap_files+=("$f")
-	fi
+	result_files+=("$f")
 done
-if [ ${#tap_files[@]} -gt 0 ] && ! "$(dirname "$0")/verify-tap.sh" "${tap_files[@]}"; then
+if [ ${#result_files[@]} -gt 0 ] && ! "$(dirname "$0")/verify-tap.sh" --skip-non-tap "${result_files[@]}"; then
 	echo
 	echo "pgtap failures detected. Cannot run 'make results'."
 	exit 1
