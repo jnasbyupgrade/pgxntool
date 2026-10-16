@@ -201,10 +201,12 @@ endif
 # other test type pgxntool supports. Its schedule entries reference the
 # original file via a relative "../install/<name>" path, so pg_regress
 # resolves BOTH the expected output and the actual output to the exact same
-# file (test/install/<name>.out) -- the actual run silently overwrites the
-# expected file in place, rather than ever comparing it against anything. A
-# content difference (wrong output, a changed column, whatever) will NEVER
-# fail this way, no matter how it changes -- see issue #97.
+# file ($(TESTDIR)/install/<name>.out; when TESTOUT differs from TESTDIR,
+# _test-install-output-link makes that hold) -- the actual run silently
+# overwrites the expected file in place, rather than ever comparing it
+# against anything. A content difference (wrong output, a changed column,
+# whatever) will NEVER fail this way, no matter how it changes -- see issue
+# #97.
 #
 # The only thing that forces the build to fail is psql's own exit code: a
 # statement that raises a hard error only aborts psql (non-zero exit, which
@@ -427,6 +429,24 @@ $(_PGXNTOOL_INSTALL_SCHEDULE):
 	done
 
 installcheck: $(_PGXNTOOL_INSTALL_SCHEDULE)
+
+# pg_regress writes the actual output to $(TESTOUT)/results/../install/ but
+# diffs it against $(TESTDIR)/expected/../install/; those only agree if
+# $(TESTOUT)/install and $(TESTDIR)/install are the same directory. Never
+# replace something else already at that path: it isn't ours to delete.
+ifneq ($(abspath $(TESTOUT)),$(abspath $(TESTDIR)))
+.PHONY: _test-install-output-link
+_test-install-output-link:
+	@link='$(TESTOUT)/install'; target='$(abspath $(TESTDIR)/install)'; \
+	if [ -L "$$link" ] && [ "$$(readlink "$$link")" = "$$target" ]; then exit 0; fi; \
+	if [ -e "$$link" ] || [ -L "$$link" ]; then \
+		echo "ERROR: $$link exists and is not a symlink to $$target" >&2; \
+		echo "test/install output must land in $$target; remove $$link and rerun" >&2; \
+		exit 1; \
+	fi; \
+	mkdir -p '$(TESTOUT)' && ln -s "$$target" "$$link"
+installcheck: | _test-install-output-link
+endif
 endif
 
 PGXS := $(shell $(PG_CONFIG) --pgxs)
