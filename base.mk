@@ -725,10 +725,11 @@ test-build: install
 endif
 test-build:
 	@$(PGXNTOOL_DIR)/run-test-build.sh $(TESTDIR)
-	$(MAKE) -C . _PGXNTOOL_TEST_BUILD_ACTIVE=yes REGRESS="$(TEST_BUILD_REGRESS)" REGRESS_OPTS="--inputdir=$(TESTDIR)/build --outputdir=$(TESTDIR)/build" installcheck
-	@if [ -r $(TESTDIR)/build/regression.diffs ]; then \
-		echo "test-build failed - see $(TESTDIR)/build/regression.diffs"; \
-		cat $(TESTDIR)/build/regression.diffs; \
+	@mkdir -p $(TESTOUT)/build
+	$(MAKE) -C . _PGXNTOOL_TEST_BUILD_ACTIVE=yes REGRESS="$(TEST_BUILD_REGRESS)" REGRESS_OPTS="--inputdir=$(TESTDIR)/build --outputdir=$(TESTOUT)/build" installcheck
+	@if [ -r $(TESTOUT)/build/regression.diffs ]; then \
+		echo "test-build failed - see $(TESTOUT)/build/regression.diffs"; \
+		cat $(TESTOUT)/build/regression.diffs; \
 		exit 1; \
 	fi
 
@@ -755,12 +756,12 @@ endif
 # as the new baseline would defeat the point of test-build. If a project
 # intentionally exercises an error case in test/build (e.g. verifying a
 # migration fails as expected), bless that file by hand instead:
-#   cp $(TESTDIR)/build/results/<name>.out $(TESTDIR)/build/expected/<name>.out
+#   cp $(TESTOUT)/build/results/<name>.out $(TESTDIR)/build/expected/<name>.out
 #
 # This ERROR-scanning safeguard is only possible because test-build writes
 # actual output to a location genuinely separate from its expected output
-# (--inputdir/--outputdir both point at test/build, but pg_regress keeps
-# expected/ and results/ distinct there) -- test/install intentionally does
+# ($(TESTDIR)/build/expected/ vs $(TESTOUT)/build/results/, distinct even
+# when TESTOUT = TESTDIR) -- test/install intentionally does
 # NOT work this way (see test/install's own comments above): its actual
 # output lands on top of its expected file, so there's nothing to diff. We
 # don't generally care about test-build's own output content, but when a
@@ -773,7 +774,7 @@ endif
 # fails, the actual output results-build needs is already on disk. But
 # test-build can also fail for reasons that leave nothing fresh to bless --
 # install broke, run-test-build.sh errored, pg_regress couldn't even
-# connect -- in which case test/build/results/*.out is stale leftovers from
+# connect -- in which case $(TESTOUT)/build/results/*.out is stale leftovers from
 # whatever run last populated it, and blessing it would silently paper over
 # the real failure instead of surfacing it. We clear regression.diffs
 # beforehand and only treat a failure as "there's a diff to bless" if it
@@ -784,14 +785,14 @@ endif
 # below.
 .PHONY: results-build
 results-build:
-	@rm -f $(TESTDIR)/build/regression.diffs
-	$(MAKE) -C . test-build || test -s $(TESTDIR)/build/regression.diffs || { \
+	@rm -f $(TESTOUT)/build/regression.diffs
+	$(MAKE) -C . test-build || test -s $(TESTOUT)/build/regression.diffs || { \
 		echo "results-build: test-build failed for a reason other than a diff to bless; not blessing stale output" >&2; \
 		exit 1; \
 	}
 	@mkdir -p $(TESTDIR)/build/expected
 	@skipped=0; \
-	for f in $(TESTDIR)/build/results/*.out; do \
+	for f in $(TESTOUT)/build/results/*.out; do \
 		[ -f "$$f" ] || continue; \
 		if grep -q 'ERROR:' "$$f"; then \
 			echo "results-build: skipping $$f (actual output contains ERROR:)" >&2; \

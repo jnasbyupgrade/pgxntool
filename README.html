@@ -842,7 +842,7 @@ ROLLBACK;</pre>
 </div>
 <div class="listingblock">
 <div class="content">
-<pre>cp test/build/results/&lt;name&gt;.out test/build/expected/&lt;name&gt;.out</pre>
+<pre>cp test/build/results/&lt;name&gt;.out test/build/expected/&lt;name&gt;.out   # $(TESTOUT)/build/results/ if TESTOUT is set</pre>
 </div>
 </div>
 </div>
@@ -2112,20 +2112,10 @@ Variables marked with <code>*</code> must be set to exactly <code>yes</code> or 
 <div class="sect2">
 <h3 id="_testout"><a class="anchor" href="#_testout"></a><a class="link" href="#_testout">8.8. TESTOUT</a></h3>
 <div class="paragraph">
-<p>Default: <code>$(TESTDIR)</code>. Directory the main test suite&#8217;s actual output goes to&#8201;&#8212;&#8201;<code>$(TESTOUT)/results/</code>, <code>$(TESTOUT)/regression.diffs</code>, etc.&#8201;&#8212;&#8201;via <code>--outputdir</code> in <code>REGRESS_OPTS</code>. Kept separate from <code>TESTDIR</code> so generated output can be pointed somewhere other than the directory holding your checked-in <code>sql</code>/<code>expected</code> files, if you want that separation.</p>
+<p>Default: <code>$(TESTDIR)</code>. Directory actual test output goes to: the main suite&#8217;s <code>$(TESTOUT)/results/</code>, <code>$(TESTOUT)/regression.diffs</code>, etc. (via <code>--outputdir</code> in <code>REGRESS_OPTS</code>), and <a href="#_test_build">test-build</a>'s <code>$(TESTOUT)/build/results/</code> and <code>$(TESTOUT)/build/regression.diffs</code>. Kept separate from <code>TESTDIR</code> so generated output can be pointed somewhere other than the directory holding your checked-in <code>sql</code>/<code>expected</code> files, if you want that separation.</p>
 </div>
 <div class="paragraph">
-<p>Two kinds of output do not move:</p>
-</div>
-<div class="ulist">
-<ul>
-<li>
-<p><a href="#_testinstall">test/install</a> output always lands in <code>$(TESTDIR)/install/</code> (gitignored), because <code>pg_regress</code> writes each install file&#8217;s actual output over its own expected file. When <code>TESTOUT</code> differs from <code>TESTDIR</code>, <code>make test</code> makes <code>$(TESTOUT)/install</code> a symlink to <code>$(TESTDIR)/install</code>, and fails rather than replace anything else already at that path.</p>
-</li>
-<li>
-<p><a href="#_test_build">test-build</a> output stays in <code>$(TESTDIR)/build/</code>.</p>
-</li>
-</ul>
+<p>Test input files, including test-build&#8217;s <code>.sql</code> and expected files, stay in <code>$(TESTDIR)</code>. <a href="#_testinstall">test/install</a> output does not move either: it always lands in <code>$(TESTDIR)/install/</code> (gitignored), because <code>pg_regress</code> writes each install file&#8217;s actual output over its own expected file. When <code>TESTOUT</code> differs from <code>TESTDIR</code>, <code>make test</code> makes <code>$(TESTOUT)/install</code> a symlink to <code>$(TESTDIR)/install</code>, and fails rather than replace anything else already at that path.</p>
 </div>
 </div>
 <div class="sect2">
@@ -2230,7 +2220,7 @@ but that PGXNtool has no part in. It currently covers which <code>.control</code
 </div>
 <div id="footer">
 <div id="footer-text">
-Last updated 2026-10-16 16:19:18 -0500
+Last updated 2026-10-16 16:22:23 -0500
 </div>
 </div>
 </body>
